@@ -69,7 +69,7 @@ public struct IndirectMacro: MemberMacro, MemberAttributeMacro {
     providingMembersOf declaration: Declaration,
     in context: Context
   ) throws -> [DeclSyntax] {
-    guard let identified = declaration.asProtocol(IdentifiedDeclSyntax.self) else {
+    guard declaration.asProtocol(IdentifiedDeclSyntax.self) != nil else {
       return []
     }
     
@@ -90,17 +90,21 @@ public struct IndirectMacro: MemberMacro, MemberAttributeMacro {
     
     let noInitializer = initializers.count == 0
     
+    let valueTypeName = context.makeUniqueName("_Value")
+    
+    let boxTypeName = context.makeUniqueName("_Box")
+    
     let boxedValue: DeclSyntax =
       """
-      private struct _Value {
+      private struct \(valueTypeName) {
         \(memberList)
       }
       
       @propertyWrapper
-      private class _Box {
-        var wrappedValue: _Value
+      private class \(boxTypeName) {
+        var wrappedValue: \(valueTypeName)
       
-        init(wrappedValue: _Value) {
+        init(wrappedValue: \(valueTypeName)) {
           self.wrappedValue = wrappedValue
         }
       }
@@ -108,15 +112,15 @@ public struct IndirectMacro: MemberMacro, MemberAttributeMacro {
     
     let storage: DeclSyntax =
       """
-      @_Box
-      private var _storage: _Value
+      @\(boxTypeName)
+      private var _storage: \(valueTypeName)
       """
     
     let makeUniqueBoxIfNeeded: DeclSyntax =
       """
       private mutating func _makeUniqueBoxIfNeeded() {
         if !isKnownUniquelyReferenced(&__storage) {
-          __storage = _Box(wrappedValue: __storage.wrappedValue)
+          __storage = \(boxTypeName)(wrappedValue: __storage.wrappedValue)
         }
       }
       """
@@ -130,7 +134,7 @@ public struct IndirectMacro: MemberMacro, MemberAttributeMacro {
       
       let body: DeclSyntax =
         """
-        self._storage = _Value(\(raw: names.map({ "\($0.firstName): \($0.secondName)" }).joined(separator: ", "))
+        self._storage = \(valueTypeName)(\(raw: names.map({ "\($0.firstName): \($0.secondName)" }).joined(separator: ", "))
         """
       
       initializer.body = CodeBlockSyntax(body)
@@ -146,7 +150,7 @@ public struct IndirectMacro: MemberMacro, MemberAttributeMacro {
       memberwiseInitializer = [
         """
         init(\(raw: storedProperties.map({"\($0.name) : \($0.type)"}).joined(separator: ", "))) {
-          self._storage = _Value(\(raw: storedProperties.map({"\($0.name) : \($0.name)"}).joined(separator: ", ")))
+          self._storage = \(valueTypeName)(\(raw: storedProperties.map({"\($0.name) : \($0.name)"}).joined(separator: ", ")))
         }
         """
       ]
