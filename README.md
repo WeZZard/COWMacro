@@ -79,3 +79,7 @@ func foe(foo: Foo) {
   // do something with copiedFoo3 ...
 }
 ```
+
+## License
+
+MIT
