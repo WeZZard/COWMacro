@@ -1,12 +1,17 @@
 import IndirectMacroPlugin
 
 @Indirect
-struct Bar {
+struct Fee {
     
     var value: Int
     
 }
 
-let bar = Bar(value: 10)
+let bar = Fee(value: 10)
 
-
+@Indirect
+struct Feo {
+    
+    var value = 0
+    
+}

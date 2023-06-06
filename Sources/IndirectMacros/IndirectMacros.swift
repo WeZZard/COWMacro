@@ -37,8 +37,13 @@ private extension DeclSyntaxProtocol {
         return nil
       }
       let id: String = identPattern.identifier.text
-      let type: String? = binding.typeAnnotation?.type.description
-      return (name: id , type: type ?? "<UnkownType>")
+      guard let type: String = binding.typeAnnotation?.type.description else {
+        // No type annotation binding
+        // Maybe: var foo = 0
+        // TODO: Offer a property-wrapper-like rewriting behavior.
+        return nil
+      }
+      return (name: id , type: type)
     }
     
     return names
