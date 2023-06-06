@@ -1,8 +1,12 @@
 import IndirectMacroPlugin
 
-let a = 17
-let b = 25
+@Indirect
+struct Bar {
+    
+    var value: Int
+    
+}
 
-let (result, code) = #stringify(a + b)
+let bar = Bar(value: 10)
 
-print("The value \(result) was produced by the code \"\(code)\"")
+

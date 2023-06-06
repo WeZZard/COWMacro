@@ -1,14 +1,13 @@
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 import XCTest
-import IndirectMacroPluginMacros
+import IndirectMacros
 
-let testMacros: [String: Macro.Type] = [
-    "stringify": StringifyMacro.self,
-]
 
 final class IndirectMacroPluginTests: XCTestCase {
+    
     func testMacro() {
+        /*
         assertMacroExpansion(
             """
             #stringify(a + b)
@@ -18,9 +17,11 @@ final class IndirectMacroPluginTests: XCTestCase {
             """,
             macros: testMacros
         )
+         */
     }
 
     func testMacroWithStringLiteral() {
+        /*
         assertMacroExpansion(
             #"""
             #stringify("Hello, \(name)")
@@ -30,5 +31,6 @@ final class IndirectMacroPluginTests: XCTestCase {
             """#,
             macros: testMacros
         )
+         */
     }
 }
