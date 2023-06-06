@@ -2,7 +2,7 @@
 
 ## What Does It Solve?
 
-Typically a struct may have a lot of member due to the growth of an app.
+Typically a struct may have a lot of members due to the growth of an app.
 
 ```swift
 struct Foo {
