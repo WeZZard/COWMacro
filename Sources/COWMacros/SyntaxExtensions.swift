@@ -31,8 +31,6 @@ extension VariableDeclSyntax {
     
     internal let isMarkedExcluded: Bool
     
-    internal let isMarkedStorageProperty: Bool
-    
     internal let hasDefaultValue: Bool
     
   }
@@ -44,15 +42,13 @@ extension VariableDeclSyntax {
     
     let hasStorage = binding.accessor == nil
     let hasDefaultValue = binding.initializer != nil
-    let isMarkedIncluded = hasMacroApplication(COWMacro.includedMacroName)
-    let isMarkedExcluded = hasMacroApplication(COWMacro.excludedMacroName)
-    let isMarkedStorageProperty = hasMacroApplication(COWMacro.storagePropertyMacroName)
+    let isMarkedIncluded = hasMacroApplication(COWIncludedMacro.name)
+    let isMarkedExcluded = hasMacroApplication(COWExcludedMacro.name)
     
     return Info(
       hasStorage: hasStorage,
       isMarkedIncluded: isMarkedIncluded,
       isMarkedExcluded: isMarkedExcluded,
-      isMarkedStorageProperty: isMarkedStorageProperty,
       hasDefaultValue: hasDefaultValue
     )
   }
@@ -61,14 +57,7 @@ extension VariableDeclSyntax {
     guard let info = info else {
       return false
     }
-    return !info.isMarkedExcluded && !info.isMarkedStorageProperty
-  }
-  
-  internal var isValidCOWStorageProperty: Bool {
-    guard let info = info else {
-      return false
-    }
-    return info.isMarkedStorageProperty
+    return !info.isMarkedExcluded
   }
   
   internal var identifierPattern: IdentifierPatternSyntax? {
@@ -235,6 +224,28 @@ extension TypeSyntax {
         break
       }
     }
+    return nil
+  }
+  
+}
+
+extension AttributeSyntax.Argument {
+  
+  internal var storageMemberName: TokenSyntax? {
+    guard case .argumentList(let args) = self else {
+      return nil
+    }
+    
+    guard let storageSyntax = args.first?.as(StringLiteralExprSyntax.self) else {
+      return nil
+    }
+    
+    for each in storageSyntax.segments {
+      if case .stringSegment(let seg) = each {
+        return seg.content
+      }
+    }
+    
     return nil
   }
   

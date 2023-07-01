@@ -5,79 +5,78 @@ import SwiftSyntaxMacros
 @_implementationOnly import SwiftSyntaxBuilder
 @_implementationOnly import SwiftDiagnostics
 
+// MARK: - NameLookupable
+
+internal protocol NameLookupable {
+  
+  static var name: String { get }
+  
+  static var qualifiedName: String { get }
+  
+  static var type: TypeSyntax { get }
+  
+}
+
+extension NameLookupable {
+  
+  internal static var moduleName: String {
+    return "COW"
+  }
+  
+  internal static var qualifiedName: String {
+    return "\(moduleName).\(name)"
+  }
+
+  internal static var type: TypeSyntax {
+    return "\(raw: qualifiedName)"
+  }
+  
+}
+
+internal struct _Box: NameLookupable {
+  
+  internal static var name: String {
+    "_Box"
+  }
+  
+}
+
+internal struct CopyOnWritable: NameLookupable {
+  
+  internal static var name: String {
+    "CopyOnWritable"
+  }
+  
+}
+
+internal struct CopyOnWriteStorage: NameLookupable {
+  
+  internal static var name: String {
+    "CopyOnWriteStorage"
+  }
+  
+}
+
 // MARK: - @COW
 
-// TODO: Can use custom storage
 public struct COWMacro:
   MemberMacro,
   MemberAttributeMacro,
-  ConformanceMacro
+  ConformanceMacro,
+  NameLookupable
 {
-  internal static let moduleName = "COW"
   
-  internal static let macroName = "COW"
-  
-  internal static let includedMacroName = "COWIncluded"
-  
-  internal static let excludedMacroName = "COWExcluded"
-  
-  internal static let storageMacroName = "COWStorage"
-  
-  internal static let storagePropertyMacroName
-    = "COWStorageProperty"
-  
-  internal static func makeUniqueStorageIfNeeded(
-    _ storageName: TokenSyntax
-  ) -> DeclSyntax {
-    return
-      """
-      internal nonisolated mutating func _makeUniqueStorageIfNeeded() {
-        guard !isKnownUniquelyReferenced(&\(storageName)) else {
-          return
-        }
-        \(storageName) = .create(minimumCapacity: 1) { prototype in
-          prototype.withUnsafeMutablePointerToHeader {
-            $0.pointee = Void()
-          }
-          prototype.withUnsafeMutablePointerToElements { elements in
-            \(storageName).withUnsafeMutablePointerToElements { oldElements in
-              elements.pointee = oldElements.pointee
-            }
-          }
-        }
+  internal static func userDefinedStorageTypeDecls<Declaration: DeclGroupSyntax>(in declaration: Declaration) -> [StructDeclSyntax] {
+    return declaration.memberBlock.members.compactMap { eachItem in
+      guard let structDecl = eachItem.decl.as(StructDeclSyntax.self),
+            structDecl.hasMacroApplication(COWStorageMacro.name) else {
+        return nil
       }
-      """
+      return structDecl
+    }
   }
   
-  internal struct CopyOnWritable {
-    
-    internal static let conformanceName = "CopyOnWritable"
-    
-    internal static var qualifiedConformanceName: String {
-      return "\(moduleName).\(conformanceName)"
-    }
-
-    internal static var conformanceType: TypeSyntax {
-      "\(raw: qualifiedConformanceName)"
-    }
-    
-  }
-
-  internal struct CopyOnWriteStorage {
-    
-    internal static let conformanceName = "CopyOnWriteStorage"
-    
-    internal static var qualifiedConformanceName: String {
-      return "\(moduleName).\(conformanceName)"
-    }
-
-    internal static var conformanceType: TypeSyntax {
-      "\(raw: qualifiedConformanceName)"
-    }
-    
-  }
-  
-  internal static func transferredStorageMembers<Declaration: DeclGroupSyntax>(for declaration: Declaration) -> [VariableDeclSyntax] {
+  internal static func collectValidVarDecls<Declaration: DeclGroupSyntax>(for declaration: Declaration) -> [VariableDeclSyntax] {
     return declaration.memberBlock.members.compactMap { eachItem in
       guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
             varDecl.isValidForBeingIncludedInCOWStorage else {
@@ -94,46 +93,32 @@ public struct COWMacro:
     for declaration: Declaration,
     with transferredStorageMembers: [VariableDeclSyntax],
     in context: Context
-  ) -> StructDeclSyntax? {
-    
+  ) -> StructDeclSyntax {
     let allMemebers = transferredStorageMembers.map {
       MemberDeclListItemSyntax(decl: $0)
     }
     // TODO: + @COWStorage marked subtype'd memberd
-    
-    if allMemebers.isEmpty {
-      return nil
+    let inheritance = TypeInheritanceClauseSyntax {
+      InheritedTypeListSyntax([InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)])
     }
-    
-    return StructDeclSyntax(identifier: .identifier("Storage")) {
+    return StructDeclSyntax(identifier: .identifier("Storage"), inheritanceClause: inheritance) {
       MemberDeclListSyntax(allMemebers)
     }
   }
   
-  internal static func storageMemberDecl(_ storageTypeName: TokenSyntax) -> (VariableDeclSyntax, IdentifierPatternSyntax) {
-    let storageMemberName: IdentifierPatternSyntax = IdentifierPatternSyntax(identifier: .identifier("_$storage"))
-    var varDecl = VariableDeclSyntax(Keyword.var, name: PatternSyntax(storageMemberName))
-    var excludedAttr: AttributeSyntax = "@\(raw: excludedMacroName)"
-    excludedAttr.trailingTrivia = .newlines(1)
-    varDecl = varDecl.addAttribute(Syntax(excludedAttr))
-    var identInitBindingPattern = PatternBindingSyntax(pattern: IdentifierPatternSyntax(identifier: "_$storage"))
-    let initialization: ExprSyntax = """
-    ManagedBuffer<Void, \(storageTypeName)>.create(minimumCapacity: 1) { prototype in
-      prototype.withUnsafeMutablePointerToHeader {
-        $0.pointee = Void()
-      }
-      prototype.withUnsafeMutablePointerToElements { storage in
-        storage.pointee = \(storageTypeName)()
-      }
-    }
-    """
-    identInitBindingPattern.initializer = InitializerClauseSyntax(value: initialization)
-    
-    varDecl.bindings = PatternBindingListSyntax {
-      identInitBindingPattern
-    }
-    
-    return (varDecl, storageMemberName)
+  internal static func storageMemberDecl(memberName: TokenSyntax, typeName: TokenSyntax) -> DeclSyntax {
+    return
+      """
+      @\(raw: COWExcludedMacro.name)
+      @\(_Box.type)
+      var \(memberName): \(typeName) = \(typeName)()
+      """
+  }
+  
+  // MARK: NameLookupable
+  
+  internal static var name: String {
+    "COW"
   }
   
   // MARK: MemberMacro
@@ -149,6 +134,8 @@ public struct COWMacro:
     guard let identified = declaration.asProtocol(IdentifiedDeclSyntax.self) else {
       return []
     }
+    
+    let storageMemberName = node.argument?.storageMemberName ?? "_$storage"
     
     let appliedType = identified.identifier
     
@@ -169,31 +156,41 @@ public struct COWMacro:
       throw DiagnosticsError(syntax: node, message: "@COW cannot be applied to non-struct type \(appliedType.text)", id: .invalidType)
     }
     
-    // Create heap storage type
-    let transferredStorageMembers = self.transferredStorageMembers(for: declaration)
+    // Create storage type
+    let validVarDecls = self.collectValidVarDecls(for: declaration)
     
-    for property in transferredStorageMembers {
+    if validVarDecls.isEmpty {
+      return []
+    }
+    
+    for property in validVarDecls {
       // TODO: Fix with init accessor in the future
       if property.info?.hasStorage == false {
         throw DiagnosticsError(syntax: node, message: "@COW requires property '\(property.identifier?.text ?? "")' to have an initial value", id: .missingInitializer)
       }
     }
     
-    guard let storageTypeDecl = self.storageTypeDecl(for: declaration, with: transferredStorageMembers, in: context) else {
-      return []
+    let userStorageTypeDecls = userDefinedStorageTypeDecls(in: declaration)
+    
+    let storageTypeDecl: StructDeclSyntax
+    
+    if userStorageTypeDecls.isEmpty {
+      storageTypeDecl = self.storageTypeDecl(for: declaration, with: validVarDecls, in: context)
+    } else if userStorageTypeDecls.count == 1 {
+      storageTypeDecl = userStorageTypeDecls[0]
+    } else {
+      let secondUserStorageTypeDecl = userStorageTypeDecls[1]
+      throw DiagnosticsError(syntax: secondUserStorageTypeDecl, message: "Only one sub-struct can be marked with @COWStorage in a @COW marked struct.", id: .duplicateCOWStorages)
     }
     
     let storageTypeName = TokenSyntax(storageTypeDecl.identifier.tokenKind, presence: storageTypeDecl.identifier.presence)
     
-    // Create heap storage member
-    let (storageMemberDecl, storageMemberName) = self.storageMemberDecl(storageTypeName)
-    
-    let makeUniqueStorageIfNeeded = self.makeUniqueStorageIfNeeded(storageMemberName.identifier)
+    // Create storage member
+    let storageMemberDecl = self.storageMemberDecl(memberName: storageMemberName, typeName: storageTypeName)
     
     return [
       DeclSyntax(storageTypeDecl),
-      DeclSyntax(storageMemberDecl),
-      makeUniqueStorageIfNeeded,
+      storageMemberDecl,
     ]
   }
   
@@ -223,13 +220,7 @@ public struct COWMacro:
     
     if varDecl.isValidForBeingIncludedInCOWStorage {
       return [
-        "@\(raw: includedMacroName)"
-      ]
-    }
-    
-    if varDecl.isValidCOWStorageProperty {
-      return [
-        "@\(raw: storagePropertyMacroName)"
+        "@\(raw: COWIncludedMacro.name)"
       ]
     }
     
@@ -255,20 +246,26 @@ public struct COWMacro:
     
     if let inheritanceList {
       for inheritance in inheritanceList {
-        if inheritance.typeName.identifier == CopyOnWritable.conformanceName {
+        if inheritance.typeName.identifier == CopyOnWritable.name {
           return []
         }
       }
     }
     
-    return [(CopyOnWritable.conformanceType, nil)]
+    return [(CopyOnWritable.type, nil)]
   }
   
 }
 
 // MARK: - @COWIncluded
 
-public struct COWIncludedMacro: AccessorMacro {
+public struct COWIncludedMacro: AccessorMacro, NameLookupable {
+  
+  // MARK: - NameLookupable
+  
+  internal static var name: String {
+    "COWIncluded"
+  }
   
   public static func expansion<
     Context: MacroExpansionContext,
@@ -289,19 +286,14 @@ public struct COWIncludedMacro: AccessorMacro {
     let getAccessor: AccessorDeclSyntax =
       """
       get {
-        return _$storage.withUnsafeMutablePointerToElements { elem in
-          elem.pointee.\(identifier)
-        }
+        return _$storage.\(identifier)
       }
       """
 
     let setAccessor: AccessorDeclSyntax =
       """
       set {
-        _makeUniqueStorageIfNeeded()
-        _$storage.withUnsafeMutablePointerToElements { elem in
-          elem.pointee.\(identifier) = newValue
-        }
+        _$storage.\(identifier) = newValue
       }
       """
     
@@ -315,7 +307,15 @@ public struct COWIncludedMacro: AccessorMacro {
 
 // MARK: - @COWExcluded
 
-public struct COWExcludedMacro: AccessorMacro {
+public struct COWExcludedMacro: AccessorMacro, NameLookupable {
+  
+  // MARK: - NameLookupable
+  
+  internal static var name: String {
+    "COWExcluded"
+  }
+  
+  // MARK: - AccessorMacro
   
   public static func expansion<
     Context: MacroExpansionContext,
@@ -333,7 +333,15 @@ public struct COWExcludedMacro: AccessorMacro {
 
 // MARK: - @COWStorage
 
-public struct COWStorageMacro: ConformanceMacro {
+public struct COWStorageMacro: ConformanceMacro, NameLookupable {
+  
+  // MARK: - NameLookupable
+  
+  internal static var name: String {
+    "COWStorage"
+  }
+  
+  // MARK: - ConformanceMacro
   
   public static func expansion<
     Declaration : DeclGroupSyntax,
@@ -354,13 +362,13 @@ public struct COWStorageMacro: ConformanceMacro {
     
     if let inheritanceList {
       for inheritance in inheritanceList {
-        if inheritance.typeName.identifier == COWMacro.CopyOnWriteStorage.conformanceName {
+        if inheritance.typeName.identifier == CopyOnWriteStorage.name {
           return []
         }
       }
     }
     
-    return [(COWMacro.CopyOnWriteStorage.conformanceType, nil)]
+    return [(CopyOnWriteStorage.type, nil)]
   }
   
 }

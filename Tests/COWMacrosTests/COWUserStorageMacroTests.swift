@@ -25,9 +25,7 @@ final class COWStorageMacroTests: XCTestCase {
       struct Foo {
       }
       """,
-      macros: [
-        "COWStorage" : COWStorageMacro.self
-      ]
+      macros: testedMacros
     )
   }
   
@@ -43,9 +41,7 @@ final class COWStorageMacroTests: XCTestCase {
       enum Foo {
       }
       """,
-      macros: [
-        "COWStorage" : COWStorageMacro.self
-      ]
+      macros: testedMacros
     )
   }
   
@@ -61,9 +57,7 @@ final class COWStorageMacroTests: XCTestCase {
       class Foo {
       }
       """,
-      macros: [
-        "COWStorage" : COWStorageMacro.self
-      ]
+      macros: testedMacros
     )
   }
   

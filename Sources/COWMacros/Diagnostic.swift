@@ -14,6 +14,7 @@ internal struct COWDiagnostic: DiagnosticMessage {
   internal enum ID: String {
     case invalidType = "invalid type"
     case missingInitializer = "missing initializer"
+    case duplicateCOWStorages = "duplciate COW storages"
     case internalInconsistency = "internal inconsistency"
   }
   

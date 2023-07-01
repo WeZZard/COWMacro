@@ -17,7 +17,7 @@
 @attached(member, names: arbitrary)
 @attached(memberAttribute)
 @attached(conformance)
-public macro COW(_ storageVariableName: String = "_$storage") =
+public macro COW(_ storageVariableName: String? = nil) =
   #externalMacro(module: "COWMacros", type: "COWMacro")
 
 /// Marks a property in a `@COW` makred `struct` should be taken into
@@ -178,7 +178,7 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   
   @inlinable
   public mutating func _makeUniqueBufferIfNeeded() {
-    guard !isKnownUniquelyReferenced(&_buffer) else {
+    guard _slowPath(!isKnownUniquelyReferenced(&_buffer)) else {
       return
     }
     _buffer = .create(minimumCapacity: 1) { _ in

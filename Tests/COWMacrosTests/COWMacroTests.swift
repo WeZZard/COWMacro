@@ -4,10 +4,12 @@
 
 @testable import COWMacros
 
-private let testedMacros: [String : Macro.Type] = [
+internal let testedMacros: [String : Macro.Type] = [
   "COW" : COWMacro.self,
   "COWIncluded" : COWIncludedMacro.self,
   "COWExcluded" : COWExcludedMacro.self,
+  "COWStorage" : COWStorageMacro.self,
+  "COWStorageAddProperty" : COWStorageAddPropertyMacro.self,
 ]
 
 final class COWMacroTests: XCTestCase {
@@ -46,44 +48,18 @@ final class COWMacroTests: XCTestCase {
       
         var value: Int = 0 {
           get {
-            return _$storage.withUnsafeMutablePointerToElements { elem in
-              elem.pointee.value
-            }
+            return _$storage.value
           }
           set {
-            _makeUniqueStorageIfNeeded()
-            _$storage.withUnsafeMutablePointerToElements { elem in
-              elem.pointee.value = newValue
-            }
+            _$storage.value = newValue
           }
         }
-        struct Storage {
+        struct Storage: COW.CopyOnWriteStorage {
         
           var value: Int = 0
         }
-        var _$storage = ManagedBuffer<Void, Storage> .create(minimumCapacity: 1) { prototype in
-          prototype.withUnsafeMutablePointerToHeader {
-            $0.pointee = Void()
-          }
-          prototype.withUnsafeMutablePointerToElements { storage in
-            storage.pointee = Storage()
-          }
-        }
-        internal nonisolated mutating func _makeUniqueStorageIfNeeded() {
-          guard !isKnownUniquelyReferenced(&_$storage) else {
-            return
-          }
-          _$storage = .create(minimumCapacity: 1) { prototype in
-            prototype.withUnsafeMutablePointerToHeader {
-              $0.pointee = Void()
-            }
-            prototype.withUnsafeMutablePointerToElements { elements in
-              _$storage.withUnsafeMutablePointerToElements { oldElements in
-                elements.pointee = oldElements.pointee
-              }
-            }
-          }
-        }
+        @COW._Box
+        var _$storage: Storage = Storage()
       
       }
       """,
