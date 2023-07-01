@@ -5,17 +5,17 @@ import PackageDescription
 import CompilerPluginSupport
 
 let package = Package(
-    name: "IndirectMacroPlugin",
+    name: "COWMacro",
     platforms: [.macOS(.v10_15), .iOS(.v13), .tvOS(.v13), .watchOS(.v6), .macCatalyst(.v13)],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
-            name: "IndirectMacroPlugin",
-            targets: ["IndirectMacroPlugin"]
+            name: "COW",
+            targets: ["COW"]
         ),
         .executable(
-            name: "IndirectMacroPluginClient",
-            targets: ["IndirectMacroPluginClient"]
+            name: "COWClient",
+            targets: ["COWClient"]
         ),
     ],
     dependencies: [
@@ -27,7 +27,7 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         // Macro implementation that performs the source transformation of a macro.
         .macro(
-            name: "IndirectMacros",
+            name: "COWMacros",
             dependencies: [
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax")
@@ -35,17 +35,23 @@ let package = Package(
         ),
 
         // Library that exposes a macro as part of its API, which is used in client programs.
-        .target(name: "IndirectMacroPlugin", dependencies: ["IndirectMacros"]),
+        .target(name: "COW", dependencies: ["COWMacros"]),
 
         // A client of the library, which is able to use the macro in its own code.
-        .executableTarget(name: "IndirectMacroPluginClient", dependencies: ["IndirectMacroPlugin"]),
+        .executableTarget(name: "COWClient", dependencies: ["COW"]),
 
-        // A test target used to develop the macro implementation.
+        // Test targets used to develop the macro implementation.
         .testTarget(
-            name: "IndirectMacroPluginTests",
+            name: "COWMacrosTests",
             dependencies: [
-                "IndirectMacros",
+                "COWMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+            ]
+        ),
+        .testTarget(
+            name: "COWTests",
+            dependencies: [
+                "COW",
             ]
         ),
     ]
