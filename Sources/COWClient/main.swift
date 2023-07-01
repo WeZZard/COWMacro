@@ -1,18 +1,23 @@
 import COW
 
 @COW
-struct Fee {
+struct Foo {
 
   var value: Int = 0
   
 }
 
-let fee = Fee()
+let foo = Foo()
 
-struct Feo {
+
+@COW
+struct Bar {
   
-  var value = 0
+  @COWStorage
+  struct Storage {
+    
+  }
+  
+  var foo: Int = 0
   
 }
-
-let foe = Feo()

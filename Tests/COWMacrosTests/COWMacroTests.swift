@@ -31,7 +31,7 @@ final class COWMacroTests: XCTestCase {
     )
   }
   
-  func testCOWAddsStorageTypeMemberAndMakeUniqueStorageFunctionToNoEmptyStruct() {
+  func testCOWAddsStorageTypeAndVarDeclToNoEmptyStruct() {
     assertMacroExpansion(
       """
       @COW
@@ -60,6 +60,97 @@ final class COWMacroTests: XCTestCase {
         }
         @COW._Box
         var _$storage: Storage = Storage()
+      
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  func testCOWAddsStorageTypeAndCustomVarDeclToNoEmptyStruct() {
+    assertMacroExpansion(
+      """
+      @COW(storageName: "_storage")
+      struct Foo {
+      
+        var value: Int = 0
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        var value: Int = 0 {
+          get {
+            return _storage.value
+          }
+          set {
+            _storage.value = newValue
+          }
+        }
+        struct Storage: COW.CopyOnWriteStorage {
+        
+          var value: Int = 0
+        }
+        @COW._Box
+        var _storage: Storage = Storage()
+      
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  
+  func testCOWWithUserDefinedCOWStorage() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Bar: Equatable {
+        
+        @COWStorage
+        struct Foo: Equatable {
+          
+          var bar: Int = 0
+          
+        }
+        
+        @COWExcluded
+        var bar: Int {
+          get {
+            _$storage.bar
+          }
+          set {
+            _$storage.bar = newValue
+          }
+        }
+        
+      }
+      """,
+      expandedSource:
+      // FIXME: Bar.Foo conforms to COW.CopyOnWriteStorage in production environment
+      """
+      
+      struct Bar: Equatable {
+        struct Foo: Equatable {
+          
+          var bar: Int = 0
+          
+        }
+        var bar: Int {
+          get {
+            _$storage.bar
+          }
+          set {
+            _$storage.bar = newValue
+          }
+        }
+        @COW._Box
+        var _$storage: Foo = Foo()
       
       }
       """,

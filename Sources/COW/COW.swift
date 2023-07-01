@@ -17,11 +17,27 @@
 @attached(member, names: arbitrary)
 @attached(memberAttribute)
 @attached(conformance)
-public macro COW(_ storageVariableName: String? = nil) =
+public macro COW() =
+  #externalMacro(module: "COWMacros", type: "COWMacro")
+
+/// Marks a `struct` to be copy-on-writable and specifies the storage
+/// variable name.
+///
+/// - Parameter storageName: The name of the copy-on-write storage.
+///
+/// - Warning: Use `@COW` in a `#if ... #else ... #end` config is an
+/// undefined behavior.
+///
+@attached(member, names: arbitrary)
+@attached(memberAttribute)
+@attached(conformance)
+public macro COW(storageName: String) =
   #externalMacro(module: "COWMacros", type: "COWMacro")
 
 /// Marks a property in a `@COW` makred `struct` should be taken into
 /// consideration as a part of the copy-on-write behavior.
+///
+/// - Parameter storageName: The name of the copy-on-write storage.
 ///
 /// - Note: This macro is makred as long as you marked `@COW` to a struct.
 /// You don't need to mark this on a property by yourself in most of the
@@ -31,59 +47,17 @@ public macro COW(_ storageVariableName: String? = nil) =
 /// undefined behavior.
 ///
 @attached(accessor)
-public macro COWIncluded() =
+public macro COWIncluded(storageName: String) =
   #externalMacro(module: "COWMacros", type: "COWIncludedMacro")
-
-public class ExcludeBehavior {
-  
-  public static let noCOWCodeGeneration: ExcludeBehavior
-    = NoCOWCodeGenerationExcludeBehavior()
-  
-  public static func forwardToStorage<
-    Storage: CopyOnWriteStorage,
-    Member
-  >(keyPath: KeyPath<Storage, Member>) -> ExcludeBehavior {
-    return ForwardToStorageExcludeBehavior(keyPath: keyPath)
-  }
-  
-  @inlinable
-  public init() { }
-  
-}
-
-public final class NoCOWCodeGenerationExcludeBehavior: ExcludeBehavior {
-  
-  @inlinable
-  public override init() { }
-  
-}
-
-public final class ForwardToStorageExcludeBehavior<
-  Storage: CopyOnWriteStorage,
-  Member
->: ExcludeBehavior {
-  
-  public let keyPath: KeyPath<Storage, Member>
-  
-  @inlinable
-  public init(keyPath: KeyPath<Storage, Member>) {
-    self.keyPath = keyPath
-  }
-  
-}
 
 /// Marks a property in a `@COW` makred `struct` should not be taken into
 /// consideration as a part of the copy-on-write behavior.
-///
-/// - Note: This macro is makred as long as you marked
-/// `@COWStorageForwarded` to a struct. You don't need to mark this on a
-/// property by yourself in most of the time.
 ///
 /// - Warning: Use `@COWExcluded` in a `#if ... #else ... #end` config is an
 /// undefined behavior.
 ///
 @attached(accessor)
-public macro COWExcluded(_ behavior: ExcludeBehavior = .noCOWCodeGeneration) =
+public macro COWExcluded() =
   #externalMacro(module: "COWMacros", type: "COWExcludedMacro")
 
 /// Mark a subtype in a `@COW` makred `struct` as the storage to use for
@@ -133,8 +107,15 @@ public macro COWExcluded(_ behavior: ExcludeBehavior = .noCOWCodeGeneration) =
 ///
 ///   var number: Int
 ///
-///   @COWExcluded(.forwardToStorage(keyPath: Storage.string))
-///   var string: String
+///   @COWExcluded
+///   var string: String {
+///     get {
+///       _$storage.string
+///     }
+///     set {
+///       _$storage.string = newValue
+///     }
+///   }
 ///
 ///   var bool: Bool
 ///
@@ -148,8 +129,8 @@ public macro COWExcluded(_ behavior: ExcludeBehavior = .noCOWCodeGeneration) =
 public macro COWStorage() =
   #externalMacro(module: "COWMacros", type: "COWStorageMacro")
 
-@attached(accessor)
-public macro COWStorageAddProperty(varDeclSyntax: String)
+@attached(member, names: arbitrary)
+public macro COWStorageAddProperty(_ varDeclSyntax: String)
   = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
 
 @propertyWrapper
@@ -184,6 +165,42 @@ public struct _Box<Contents: CopyOnWriteStorage> {
     _buffer = .create(minimumCapacity: 1) { _ in
       return self.wrappedValue
     }
+  }
+  
+}
+
+extension _Box: Equatable where Contents: Equatable {
+  
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    return lhs.wrappedValue == rhs.wrappedValue
+  }
+  
+}
+
+extension _Box: Comparable where Contents: Comparable {
+  
+  public static func < (lhs: Self, rhs: Self) -> Bool {
+    return lhs.wrappedValue < rhs.wrappedValue
+  }
+  
+}
+
+extension _Box: Hashable where Contents: Hashable {
+  
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(wrappedValue)
+  }
+  
+}
+
+extension _Box: Codable where Contents: Codable {
+  
+  public func encode(to encoder: Encoder) throws {
+    try wrappedValue.encode(to: encoder)
+  }
+  
+  public init(from decoder: Decoder) throws {
+    self.init(wrappedValue: try Contents(from: decoder))
   }
   
 }

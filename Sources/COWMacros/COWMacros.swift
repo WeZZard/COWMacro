@@ -5,6 +5,8 @@ import SwiftSyntaxMacros
 @_implementationOnly import SwiftSyntaxBuilder
 @_implementationOnly import SwiftDiagnostics
 
+private let defaultStorageName: TokenSyntax = "_$storage"
+
 // MARK: - NameLookupable
 
 internal protocol NameLookupable {
@@ -66,7 +68,9 @@ public struct COWMacro:
   NameLookupable
 {
   
-  internal static func userDefinedStorageTypeDecls<Declaration: DeclGroupSyntax>(in declaration: Declaration) -> [StructDeclSyntax] {
+  internal static func allUserDefinedStorageTypeDecls<
+    Declaration: DeclGroupSyntax
+  >(in declaration: Declaration) -> [StructDeclSyntax] {
     return declaration.memberBlock.members.compactMap { eachItem in
       guard let structDecl = eachItem.decl.as(StructDeclSyntax.self),
             structDecl.hasMacroApplication(COWStorageMacro.name) else {
@@ -76,10 +80,24 @@ public struct COWMacro:
     }
   }
   
-  internal static func collectValidVarDecls<Declaration: DeclGroupSyntax>(for declaration: Declaration) -> [VariableDeclSyntax] {
+  internal static func collectIncludeableVarDecls<
+    Declaration: DeclGroupSyntax
+  >(on declaration: Declaration) -> [VariableDeclSyntax] {
     return declaration.memberBlock.members.compactMap { eachItem in
       guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
-            varDecl.isValidForBeingIncludedInCOWStorage else {
+            varDecl.isIncludeable else {
+        return nil
+      }
+      return varDecl
+    }
+  }
+  
+  internal static func collectStoredVarDecls<
+    Declaration: DeclGroupSyntax
+  >(on declaration: Declaration) -> [VariableDeclSyntax] {
+    return declaration.memberBlock.members.compactMap { eachItem in
+      guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
+            varDecl.info?.hasStorage == true else {
         return nil
       }
       return varDecl
@@ -97,7 +115,6 @@ public struct COWMacro:
     let allMemebers = transferredStorageMembers.map {
       MemberDeclListItemSyntax(decl: $0)
     }
-    // TODO: + @COWStorage marked subtype'd memberd
     let inheritance = TypeInheritanceClauseSyntax {
       InheritedTypeListSyntax([InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)])
     }
@@ -135,7 +152,7 @@ public struct COWMacro:
       return []
     }
     
-    let storageMemberName = node.argument?.storageMemberName ?? "_$storage"
+    let storageMemberName = node.argument?.storageMemberName ?? defaultStorageName
     
     let appliedType = identified.identifier
     
@@ -157,27 +174,30 @@ public struct COWMacro:
     }
     
     // Create storage type
-    let validVarDecls = self.collectValidVarDecls(for: declaration)
+    let includeableVarDecls = self.collectIncludeableVarDecls(on: declaration)
     
-    if validVarDecls.isEmpty {
-      return []
-    }
-    
-    for property in validVarDecls {
+    for property in includeableVarDecls {
       // TODO: Fix with init accessor in the future
       if property.info?.hasStorage == false {
         throw DiagnosticsError(syntax: node, message: "@COW requires property '\(property.identifier?.text ?? "")' to have an initial value", id: .missingInitializer)
       }
     }
     
-    let userStorageTypeDecls = userDefinedStorageTypeDecls(in: declaration)
+    let userStorageTypeDecls = allUserDefinedStorageTypeDecls(in: declaration)
     
     let storageTypeDecl: StructDeclSyntax
     
+    let needsAddStorageTypeDecl: Bool
+    
     if userStorageTypeDecls.isEmpty {
-      storageTypeDecl = self.storageTypeDecl(for: declaration, with: validVarDecls, in: context)
+      if includeableVarDecls.isEmpty {
+        return []
+      }
+      storageTypeDecl = self.storageTypeDecl(for: declaration, with: includeableVarDecls, in: context)
+      needsAddStorageTypeDecl = true
     } else if userStorageTypeDecls.count == 1 {
       storageTypeDecl = userStorageTypeDecls[0]
+      needsAddStorageTypeDecl = false
     } else {
       let secondUserStorageTypeDecl = userStorageTypeDecls[1]
       throw DiagnosticsError(syntax: secondUserStorageTypeDecl, message: "Only one sub-struct can be marked with @COWStorage in a @COW marked struct.", id: .duplicateCOWStorages)
@@ -189,9 +209,9 @@ public struct COWMacro:
     let storageMemberDecl = self.storageMemberDecl(memberName: storageMemberName, typeName: storageTypeName)
     
     return [
-      DeclSyntax(storageTypeDecl),
+      needsAddStorageTypeDecl ? DeclSyntax(storageTypeDecl) : nil,
       storageMemberDecl,
-    ]
+    ].compactMap({$0})
   }
   
   // MARK: MemberAttributeMacro
@@ -207,21 +227,50 @@ public struct COWMacro:
     in context: Context
   ) throws -> [AttributeSyntax] {
     
-    if !declaration.isStruct {
+    guard let structDecl = declaration.as(StructDeclSyntax.self) else {
       return []
     }
+    
+    let storageMemberName = node.argument?.storageMemberName ?? defaultStorageName
     
     // Marks non-`@COWExcluded` stored properties with `@COWIncldued`
     // Marks `@COWStorageProperty` stored properties with `@COWExcluded`
     
-    guard let varDecl = member.as(VariableDeclSyntax.self) else {
-      return []
-    }
-    
-    if varDecl.isValidForBeingIncludedInCOWStorage {
-      return [
-        "@\(raw: COWIncludedMacro.name)"
-      ]
+    if let varDecl = member.as(VariableDeclSyntax.self) {
+      
+      guard varDecl.isIncludeable else {
+        return []
+      }
+      
+      return ["@\(raw: COWIncludedMacro.name)(storageName: \"\(storageMemberName)\")"]
+      
+    } else if let memberStructDecl = member.as(StructDeclSyntax.self) {
+      
+      guard memberStructDecl.hasMacroApplication(COWStorageMacro.name) else {
+        return []
+      }
+      
+      let storedVarDecls = self.collectStoredVarDecls(on: memberStructDecl)
+      var includeableVarDecls = self.collectIncludeableVarDecls(on: structDecl)
+      
+      // Get var decls in user storage type decl
+      // Remove equivalents in include-able var decls
+      
+      for (index, eachIncludeable) in includeableVarDecls.enumerated().reversed() {
+        for eachStored in storedVarDecls {
+          if eachIncludeable.isEquivalent(to: eachStored) {
+            includeableVarDecls.remove(at: index)
+          }
+        }
+      }
+      
+      guard !includeableVarDecls.isEmpty else {
+        return []
+      }
+      
+      return includeableVarDecls.map { each -> AttributeSyntax in
+        "@COWStorageAddProperty(\"\(raw: each.trimmed.description)\")"
+      }
     }
     
     return []
@@ -276,24 +325,26 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
     in context: Context
   ) throws -> [AccessorDeclSyntax] {
     guard let property = declaration.as(VariableDeclSyntax.self),
-          property.isValidForBeingIncludedInCOWStorage,
+          property.isIncludeable,
           let identifier = property.identifier else {
       return []
     }
     
-    // TODO: initAccessor
+    let storageMemberName = node.argument?.storageMemberName ?? defaultStorageName
+    
+    // TODO: Introduce init accessor in the future
     
     let getAccessor: AccessorDeclSyntax =
       """
       get {
-        return _$storage.\(identifier)
+        return \(storageMemberName).\(identifier)
       }
       """
 
     let setAccessor: AccessorDeclSyntax =
       """
       set {
-        _$storage.\(identifier) = newValue
+        \(storageMemberName).\(identifier) = newValue
       }
       """
     
@@ -325,7 +376,6 @@ public struct COWExcludedMacro: AccessorMacro, NameLookupable {
     providingAccessorsOf declaration: Declaration,
     in context: Context
   ) throws -> [AccessorDeclSyntax] {
-    // This macro is a mark only macro.
     []
   }
   
@@ -351,7 +401,6 @@ public struct COWStorageMacro: ConformanceMacro, NameLookupable {
     providingConformancesOf declaration: Declaration,
     in context: Context
   ) throws -> [(TypeSyntax, GenericWhereClauseSyntax?)] {
-    
     let inheritanceList: InheritedTypeListSyntax?
     
     if let structDecl = declaration.as(StructDeclSyntax.self) {
@@ -385,26 +434,25 @@ public struct COWStorageAddPropertyMacro: MemberMacro {
     providingMembersOf declaration: Declaration,
     in context: Context
   ) throws -> [DeclSyntax] {
-    []
-  }
-  
-}
-
-// MARK: - @COWStorageForwardedMacro
-
-public struct COWStorageForwardedMacro: AccessorMacro {
-  
-  public static func expansion<
-    Context: MacroExpansionContext,
-    Declaration: DeclSyntaxProtocol
-  >(
-    of node: AttributeSyntax,
-    providingAccessorsOf declaration: Declaration,
-    in context: Context
-  ) throws -> [AccessorDeclSyntax] {
-    // TODO: Diagnose warn that code generation is forbidden if there is get/_read/unsafeAddressor or set/_modify/unsafeMutableAddressor
-    // TODO: Diagnose error when the root type of the key-path does not conform to COW.CopyOnWriteStorage
-    []
+    guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+      throw DiagnosticsError(syntax: node, message: "@COWStorageAddProperty can only be applied on struct types.", id: .invalidType)
+    }
+    
+    guard structDecl.hasMacroApplication(COWStorageMacro.name) else {
+      throw DiagnosticsError(syntax: node, message: "@COWStorageAddProperty can only be applied on @COWStorage marked struct types.", id: .requiresCOWStorage)
+    }
+    
+    guard let arg = node.argument else {
+      throw DiagnosticsError(syntax: node, message: "No argument found for macro @COWStorageAddProperty.", id: .internalInconsistency)
+    }
+    
+    guard let storagePropertyDecl = arg.storagePropertyDecl else {
+      throw DiagnosticsError(syntax: node, message: "Cannot create variable declaration with argument for macro @COWStorageAddProperty: \(arg.debugDescription)", id: .internalInconsistency)
+    }
+    
+    return [
+      storagePropertyDecl
+    ]
   }
   
 }
@@ -420,7 +468,6 @@ struct COWMacrosPlugin: CompilerPlugin {
     COWExcludedMacro.self,
     COWStorageMacro.self,
     COWStorageAddPropertyMacro.self,
-    COWStorageForwardedMacro.self,
   ]
   
 }

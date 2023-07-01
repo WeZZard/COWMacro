@@ -53,7 +53,7 @@ extension VariableDeclSyntax {
     )
   }
   
-  internal var isValidForBeingIncludedInCOWStorage: Bool {
+  internal var isIncludeable: Bool {
     guard let info = info else {
       return false
     }
@@ -236,13 +236,31 @@ extension AttributeSyntax.Argument {
       return nil
     }
     
-    guard let storageSyntax = args.first?.as(StringLiteralExprSyntax.self) else {
+    guard let storageSyntax = args.first?.as(TupleExprElementSyntax.self)?.expression.as(StringLiteralExprSyntax.self) else {
       return nil
     }
     
     for each in storageSyntax.segments {
       if case .stringSegment(let seg) = each {
         return seg.content
+      }
+    }
+    
+    return nil
+  }
+  
+  internal var storagePropertyDecl: DeclSyntax? {
+    guard case .argumentList(let args) = self else {
+      return nil
+    }
+    
+    guard let storageSyntax = args.first?.as(TupleExprElementSyntax.self)?.expression.as(StringLiteralExprSyntax.self) else {
+      return nil
+    }
+    
+    for each in storageSyntax.segments {
+      if case .stringSegment(let seg) = each {
+        return DeclSyntax(stringLiteral: seg.content.text)
       }
     }
     

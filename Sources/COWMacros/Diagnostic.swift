@@ -15,6 +15,7 @@ internal struct COWDiagnostic: DiagnosticMessage {
     case invalidType = "invalid type"
     case missingInitializer = "missing initializer"
     case duplicateCOWStorages = "duplciate COW storages"
+    case requiresCOWStorage = "requires COW storage"
     case internalInconsistency = "internal inconsistency"
   }
   
