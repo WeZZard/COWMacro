@@ -37,11 +37,9 @@ public macro COW(storageName: String) =
 /// Marks a property in a `@COW` makred `struct` should be taken into
 /// consideration as a part of the copy-on-write behavior.
 ///
-/// - Parameter storageName: The name of the copy-on-write storage.
-///
-/// - Note: This macro is makred as long as you marked `@COW` to a struct.
-/// You don't need to mark this on a property by yourself in most of the
-/// time.
+/// - Note: This macro is makred along side while expanding `@COW` on a
+/// `struct`. You don't need to mark this on a property by yourself in most
+/// of the time.
 ///
 /// - Warning: Use `@COWIncluded` in a `#if ... #else ... #end` config is an
 /// undefined behavior.
@@ -59,6 +57,17 @@ public macro COWIncluded(storageName: String) =
 @attached(accessor)
 public macro COWExcluded() =
   #externalMacro(module: "COWMacros", type: "COWExcludedMacro")
+
+/// Offering information about the variable name of the copy-on-write
+/// storage to a property on a `@COW` makred struct.
+///
+/// - Note: This macro is makred along side while expanding `@COW` on a
+/// `struct`. You don't need to mark this on a property by yourself in most
+/// of the time.
+///
+@attached(memberAttribute)
+public macro COWForwardToStorage(_ storageName: String)
+  = #externalMacro(module: "COWMacros", type: "COWForwardToStorageMacro")
 
 /// Mark a subtype in a `@COW` makred `struct` as the storage to use for
 /// implementing copy-on-write behavior.
@@ -105,7 +114,7 @@ public macro COWExcluded() =
 ///
 ///   }
 ///
-///   var number: Int
+///   var number: Int = 0
 ///
 ///   @COWExcluded
 ///   var string: String {
@@ -117,7 +126,7 @@ public macro COWExcluded() =
 ///     }
 ///   }
 ///
-///   var bool: Bool
+///   var bool: Bool = false
 ///
 /// }
 /// ```
@@ -129,9 +138,18 @@ public macro COWExcluded() =
 public macro COWStorage() =
   #externalMacro(module: "COWMacros", type: "COWStorageMacro")
 
+public enum COWStoragePropertyKeyword: String {
+  case `let` = "let"
+  case `var` = "var"
+}
+
 @attached(member, names: arbitrary)
-public macro COWStorageAddProperty(_ varDeclSyntax: String)
-  = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
+public macro COWStorageAddProperty(
+  keyword: COWStoragePropertyKeyword,
+  name: String,
+  type: String?,
+  initialValue: String
+) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
 
 @propertyWrapper
 @frozen
@@ -149,11 +167,11 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   @inlinable
   public var wrappedValue: Contents {
     _read {
-      yield UnsafePointer(_buffer.withUnsafeMutablePointerToHeader({$0})).pointee
+      yield _buffer.header
     }
     _modify {
       _makeUniqueBufferIfNeeded()
-      yield &_buffer.withUnsafeMutablePointerToHeader({$0}).pointee
+      yield &_buffer.header
     }
   }
   

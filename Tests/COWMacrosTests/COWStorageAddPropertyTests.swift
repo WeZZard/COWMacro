@@ -17,14 +17,43 @@ final class COWStorageAddPropertyTests: XCTestCase {
     assertMacroExpansion(
       """
       @COWStorage
-      @COWStorageAddProperty("var value: Int = 0")
+      @COWStorageAddProperty(
+        keyword: .var,
+        name: "value",
+        type: "Int",
+        initialValue: "0"
+      )
       struct Foo {
       }
       """,
       expandedSource: """
       
       struct Foo {
-        var value: Int = 0
+        var value : Int = 0
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  func testCOWStorageAddPropertyCanAddPropertyToCOWStorageWithoutType() {
+    assertMacroExpansion(
+      """
+      @COWStorage
+      @COWStorageAddProperty(
+        keyword: .var,
+        name: "value",
+        type: nil,
+        initialValue: "0"
+      )
+      struct Foo {
+      }
+      """,
+      expandedSource: """
+      
+      struct Foo {
+        var value = 0
       }
       """,
       macros: testedMacros,

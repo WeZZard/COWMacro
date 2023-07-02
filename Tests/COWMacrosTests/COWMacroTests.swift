@@ -54,12 +54,12 @@ final class COWMacroTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-        struct Storage: COW.CopyOnWriteStorage {
+        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
         
           var value: Int = 0
         }
         @COW._Box
-        var _$storage: Storage = Storage()
+        var _$storage: __macro_local_7StoragefMu_ = __macro_local_7StoragefMu_()
       
       }
       """,
@@ -91,12 +91,12 @@ final class COWMacroTests: XCTestCase {
             _storage.value = newValue
           }
         }
-        struct Storage: COW.CopyOnWriteStorage {
+        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
         
           var value: Int = 0
         }
         @COW._Box
-        var _storage: Storage = Storage()
+        var _storage: __macro_local_7StoragefMu_ = __macro_local_7StoragefMu_()
       
       }
       """,
