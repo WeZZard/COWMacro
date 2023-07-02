@@ -181,6 +181,7 @@ public struct _Box<Contents: CopyOnWriteStorage> {
 
 extension _Box: Equatable where Contents: Equatable {
   
+  @inlinable
   public static func == (lhs: Self, rhs: Self) -> Bool {
     return lhs.wrappedValue == rhs.wrappedValue
   }
@@ -189,6 +190,7 @@ extension _Box: Equatable where Contents: Equatable {
 
 extension _Box: Comparable where Contents: Comparable {
   
+  @inlinable
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.wrappedValue < rhs.wrappedValue
   }
@@ -197,6 +199,7 @@ extension _Box: Comparable where Contents: Comparable {
 
 extension _Box: Hashable where Contents: Hashable {
   
+  @inlinable
   public func hash(into hasher: inout Hasher) {
     hasher.combine(wrappedValue)
   }
@@ -205,10 +208,12 @@ extension _Box: Hashable where Contents: Hashable {
 
 extension _Box: Codable where Contents: Codable {
   
+  @inlinable
   public func encode(to encoder: Encoder) throws {
     try wrappedValue.encode(to: encoder)
   }
   
+  @inlinable
   public init(from decoder: Decoder) throws {
     self.init(wrappedValue: try Contents(from: decoder))
   }
