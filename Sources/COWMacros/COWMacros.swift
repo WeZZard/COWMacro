@@ -43,14 +43,6 @@ internal struct _Box: NameLookupable {
   
 }
 
-internal struct CopyOnWritable: NameLookupable {
-  
-  internal static var name: String {
-    "CopyOnWritable"
-  }
-  
-}
-
 internal struct CopyOnWriteStorage: NameLookupable {
   
   internal static var name: String {
@@ -64,7 +56,6 @@ internal struct CopyOnWriteStorage: NameLookupable {
 public struct COWMacro:
   MemberMacro,
   MemberAttributeMacro,
-  ConformanceMacro,
   NameLookupable
 {
   
@@ -328,34 +319,6 @@ public struct COWMacro:
     }
     
     return []
-  }
-  
-  // MARK: ConformanceMacro
-  
-  public static func expansion<
-    Declaration: DeclGroupSyntax,
-    Context: MacroExpansionContext
-  >(
-    of node: AttributeSyntax,
-    providingConformancesOf declaration: Declaration,
-    in context: Context
-  ) throws -> [(TypeSyntax, GenericWhereClauseSyntax?)] {
-    let inheritanceList: InheritedTypeListSyntax?
-    if let structDecl = declaration.as(StructDeclSyntax.self) {
-      inheritanceList = structDecl.inheritanceClause?.inheritedTypeCollection
-    } else {
-      inheritanceList = nil
-    }
-    
-    if let inheritanceList {
-      for inheritance in inheritanceList {
-        if inheritance.typeName.identifier == CopyOnWritable.name {
-          return []
-        }
-      }
-    }
-    
-    return [(CopyOnWritable.type, nil)]
   }
   
 }

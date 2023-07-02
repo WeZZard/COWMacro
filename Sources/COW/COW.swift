@@ -1,9 +1,3 @@
-
-/// A marker protocol marks the type is copy-on-writable
-@_marker public protocol CopyOnWritable {
-  
-}
-
 /// A marker protocol marks the type is a copy-on-write user storage
 @_marker public protocol CopyOnWriteStorage {
   
@@ -16,7 +10,6 @@
 ///
 @attached(member, names: arbitrary)
 @attached(memberAttribute)
-@attached(conformance)
 public macro COW() =
   #externalMacro(module: "COWMacros", type: "COWMacro")
 
@@ -30,7 +23,6 @@ public macro COW() =
 ///
 @attached(member, names: arbitrary)
 @attached(memberAttribute)
-@attached(conformance)
 public macro COW(storageName: String) =
   #externalMacro(module: "COWMacros", type: "COWMacro")
 
