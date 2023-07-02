@@ -50,17 +50,6 @@ public macro COWIncluded(storageName: String) =
 public macro COWExcluded() =
   #externalMacro(module: "COWMacros", type: "COWExcludedMacro")
 
-/// Offering information about the variable name of the copy-on-write
-/// storage to a property on a `@COW` makred struct.
-///
-/// - Note: This macro is makred along side while expanding `@COW` on a
-/// `struct`. You don't need to mark this on a property by yourself in most
-/// of the time.
-///
-@attached(memberAttribute)
-public macro COWForwardToStorage(_ storageName: String)
-  = #externalMacro(module: "COWMacros", type: "COWForwardToStorageMacro")
-
 /// Mark a subtype in a `@COW` makred `struct` as the storage to use for
 /// implementing copy-on-write behavior.
 ///
