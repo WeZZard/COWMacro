@@ -503,6 +503,23 @@ public struct COWStorageAddPropertyMacro: MemberMacro {
   
 }
 
+public struct _COWRequiresManuallyInitializeStorageMacro: MemberAttributeMacro {
+  
+  public static func expansion<
+    Declaration : DeclGroupSyntax,
+    MemberDeclaration : DeclSyntaxProtocol,
+    Context : MacroExpansionContext
+  >(
+    of node: AttributeSyntax,
+    attachedTo declaration: Declaration,
+    providingAttributesFor member: MemberDeclaration,
+    in context: Context
+  ) throws -> [AttributeSyntax] {
+    throw DiagnosticsError(syntax: node, message: "You need to manually initialize the copy-on-write storage at the beginning of this initializer", id: .requiresManuallyInitializeStorage)
+  }
+  
+}
+
 // MARK: - @COWMacrosPlugin
 
 @main

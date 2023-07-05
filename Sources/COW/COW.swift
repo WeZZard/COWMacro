@@ -124,6 +124,17 @@ public enum COWStoragePropertyKeyword: String {
   case `var` = "var"
 }
 
+/// Adds a property to the copy-on-write storage.
+///
+/// The `@COW` macro would compute which properties are required to add to
+/// the copy-on-write storage and apply this macro to the storage on behalf
+/// of you. When the properties in your `@COW` applied struct changed, the
+/// `@COWStorageAddProperty`s applied on the copy-on-write storage get
+/// changed automatically.
+///
+/// - Note: You don't have to apply this macro to the copy-on-write storage
+/// directly.
+///
 @attached(member, names: arbitrary)
 public macro COWStorageAddProperty(
   keyword: COWStoragePropertyKeyword,
@@ -131,6 +142,24 @@ public macro COWStorageAddProperty(
   type: String?,
   initialValue: String
 ) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
+
+/// Marks that you need to manually initialize the copy-on-write storage
+/// in an initializer and throws a diagnostic error which stops the source
+/// code compile.
+///
+/// The `@COW` macro would apply it to initializers when you really have to
+/// manually initialize the copy-on-write storage to make things work. When
+/// you manually initialized the storage in an initializer that applied this
+/// macro before, `@COW` would remove this macro from that initializer.
+///
+/// - Note: You don't have to apply this macro to any initializers directly.
+///
+@attached(memberAttribute)
+public macro _COWRequiresManuallyInitializeStorage()
+  = #externalMacro(
+    module: "COWMacros",
+    type: "_COWRequiresManuallyInitializeStorageMacro"
+  )
 
 @propertyWrapper
 @frozen

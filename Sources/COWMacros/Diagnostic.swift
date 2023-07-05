@@ -16,6 +16,7 @@ internal struct COWDiagnostic: DiagnosticMessage {
     case missingInitializer = "missing initializer"
     case duplicateCOWStorages = "duplciate COW storages"
     case requiresCOWStorage = "requires COW storage"
+    case requiresManuallyInitializeStorage = "requires manually initialize storage"
     case internalInconsistency = "internal inconsistency"
   }
   
