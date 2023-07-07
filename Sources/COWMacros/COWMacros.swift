@@ -88,7 +88,7 @@ public struct COWMacro:
   >(on declaration: Declaration) -> [VariableDeclSyntax] {
     return declaration.memberBlock.members.compactMap { eachItem in
       guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
-            varDecl.info?.hasStorage == true else {
+            varDecl.bindings.allSatisfy(\.isStored) else {
         return nil
       }
       return varDecl
@@ -194,14 +194,18 @@ public struct COWMacro:
     // Create storage type
     let includeableVarDecls = self.collectIncludeableVarDecls(on: declaration)
     
-    for property in includeableVarDecls {
-      // TODO: Adopt changes brought by init accessor in the future
-      if property.info?.hasStorage == false {
-        throw DiagnosticsError(
-          syntax: node,
-          message: "@COW requires property '\(property.identifier?.text ?? "")' to have an initial value",
-          id: .missingInitializer
-        )
+    var manualInitVarDecls = [VariableDeclSyntax]()
+    
+    for varDecl in includeableVarDecls {
+      if varDecl.bindings.count != 1 {
+        throw DiagnosticsError(syntax: varDecl, message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.", id: .undefinedBehavior, severity: .error)
+      } else {
+        // Since we have thrown when there are multiple or zero bindings
+        // found on a variable declaration. We only have to consider the
+        // case that there is only one binding here.
+        if varDecl.bindings[varDecl.bindings.startIndex].hasNoInitializer {
+          manualInitVarDecls.append(varDecl)
+        }
       }
     }
     
@@ -239,6 +243,8 @@ public struct COWMacro:
       memberName: storageName,
       typeName: storageTypeName
     )
+    
+    // TODO: Create storage initializer if needed
     
     var expansions = [DeclSyntax]()
     
@@ -304,14 +310,14 @@ public struct COWMacro:
       }
       
       return includeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
-        eachVarDecl.storagePropertyDescritors.map { eachInfo in
+        eachVarDecl.storagePropertyDescriptors.map { desc in
           return
             """
             @COWStorageAddProperty(
-              keyword: .\(eachInfo.keyword.trimmed),
-              name: "\(eachInfo.name.trimmed)",
-              type: \(eachInfo.type.map({"\"\($0.trimmed)\""}) ?? "nil"),
-              initialValue: "\(eachInfo.initializer.trimmed)"
+              keyword: .\(desc.keyword.trimmed),
+              name: "\(desc.name.trimmed)",
+              type: \(desc.type.map({"\"\($0.trimmed)\""}) ?? "nil"),
+              initialValue: "\(desc.initializer.trimmed)"
             )
             """
         }
@@ -472,7 +478,15 @@ public struct COWStorageMacro: ConformanceMacro, NameLookupable {
 
 // MARK: - @COWStorageAddProperty
 
-public struct COWStorageAddPropertyMacro: MemberMacro {
+public struct COWStorageAddPropertyMacro: MemberMacro, NameLookupable {
+  
+  // MARK: - NameLookupable
+  
+  internal static var name: String {
+    "COWStorageAddProperty"
+  }
+  
+  // MARK: - MemberMacro
   
   public static func expansion<
     Declaration: DeclGroupSyntax,
@@ -499,23 +513,6 @@ public struct COWStorageAddPropertyMacro: MemberMacro {
     }
     
     return [descriptor.makeVarDecl()]
-  }
-  
-}
-
-public struct _COWRequiresManuallyInitializeStorageMacro: MemberAttributeMacro {
-  
-  public static func expansion<
-    Declaration : DeclGroupSyntax,
-    MemberDeclaration : DeclSyntaxProtocol,
-    Context : MacroExpansionContext
-  >(
-    of node: AttributeSyntax,
-    attachedTo declaration: Declaration,
-    providingAttributesFor member: MemberDeclaration,
-    in context: Context
-  ) throws -> [AttributeSyntax] {
-    throw DiagnosticsError(syntax: node, message: "You need to manually initialize the copy-on-write storage at the beginning of this initializer", id: .requiresManuallyInitializeStorage)
   }
   
 }

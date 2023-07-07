@@ -50,47 +50,22 @@ extension StructDeclSyntax {
 
 extension VariableDeclSyntax {
   
-  internal struct Info {
-    
-    internal let hasStorage: Bool
-    
-    internal let isMarkedIncluded: Bool
-    
-    internal let isMarkedExcluded: Bool
-    
-    internal let hasDefaultValue: Bool
-    
+  internal var isIncluded: Bool {
+    hasMacroApplication(COWIncludedMacro.name)
   }
   
-  internal var info: Info? {
-    guard let binding = bindings.first else {
-      return nil
-    }
-    
-    let hasStorage = binding.accessor == nil
-    let hasDefaultValue = binding.initializer != nil
-    let isMarkedIncluded = hasMacroApplication(COWIncludedMacro.name)
-    let isMarkedExcluded = hasMacroApplication(COWExcludedMacro.name)
-    
-    return Info(
-      hasStorage: hasStorage,
-      isMarkedIncluded: isMarkedIncluded,
-      isMarkedExcluded: isMarkedExcluded,
-      hasDefaultValue: hasDefaultValue
-    )
-  }
-  
-  internal var storagePropertyDescritors: [COWStoragePropertyDescriptor] {
-    bindings.compactMap { binding in
-      binding.storagePropertyDescritor(bindingKeyword)
-    }
+  internal var isExcluded: Bool {
+    hasMacroApplication(COWExcludedMacro.name)
   }
   
   internal var isIncludeable: Bool {
-    guard let info = info else {
-      return false
+    return !isExcluded
+  }
+  
+  internal var storagePropertyDescriptors: [COWStoragePropertyDescriptor] {
+    bindings.compactMap { binding in
+      binding.storagePropertyDescriptor(bindingKeyword)
     }
-    return !info.isMarkedExcluded
   }
   
 }
@@ -123,7 +98,25 @@ extension AttributeSyntax {
 
 extension PatternBindingSyntax {
   
-  internal func storagePropertyDescritor(_ keyword: TokenSyntax) -> COWStoragePropertyDescriptor? {
+  internal var isStored: Bool {
+    return accessor == nil
+  }
+  
+  internal var isComputed: Bool {
+    return accessor != nil
+  }
+  
+  internal var hasInitializer: Bool {
+    return initializer != nil
+  }
+  
+  internal var hasNoInitializer: Bool {
+    return initializer != nil
+  }
+  
+  internal func storagePropertyDescriptor(
+    _ keyword: TokenSyntax
+  ) -> COWStoragePropertyDescriptor? {
     guard let identPattern = pattern.as(IdentifierPatternSyntax.self),
           let initializer = initializer else {
       return nil
@@ -230,6 +223,23 @@ extension DeclGroupSyntax {
   
   internal var isStruct: Bool {
     return self.is(StructDeclSyntax.self)
+  }
+  
+}
+
+extension Sequence {
+  
+  internal func anySatisfies(_ keyPath: KeyPath<Element, Bool>) -> Bool {
+    for each in self where each[keyPath: keyPath] {
+      return true
+    }
+    return false
+  }
+  
+  internal func allSatisfy(_ keyPath: KeyPath<Element, Bool>) -> Bool {
+    return allSatisfy { element in
+      element[keyPath: keyPath]
+    }
   }
   
 }

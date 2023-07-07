@@ -143,24 +143,6 @@ public macro COWStorageAddProperty(
   initialValue: String
 ) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
 
-/// Marks that you need to manually initialize the copy-on-write storage
-/// in an initializer and throws a diagnostic error which stops the source
-/// code compile.
-///
-/// The `@COW` macro would apply it to initializers when you really have to
-/// manually initialize the copy-on-write storage to make things work. When
-/// you manually initialized the storage in an initializer that applied this
-/// macro before, `@COW` would remove this macro from that initializer.
-///
-/// - Note: You don't have to apply this macro to any initializers directly.
-///
-@attached(memberAttribute)
-public macro _COWRequiresManuallyInitializeStorage()
-  = #externalMacro(
-    module: "COWMacros",
-    type: "_COWRequiresManuallyInitializeStorageMacro"
-  )
-
 @propertyWrapper
 @frozen
 public struct _Box<Contents: CopyOnWriteStorage> {

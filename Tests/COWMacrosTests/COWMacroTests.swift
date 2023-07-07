@@ -235,4 +235,25 @@ final class COWMacroTests: XCTestCase {
     )
   }
   
+  func testCOWDiagnosesMultiplePropertiesOverOneVariableDeclaration() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Fee {
+        
+        @COWStorage
+        struct Storage {
+          
+        }
+        
+        var foo: Int = 0, bar: Int = 0
+        
+      }
+      """,
+      expandedSource:
+      """
+      """,
+      macros: testedMacros)
+  }
+  
 }
