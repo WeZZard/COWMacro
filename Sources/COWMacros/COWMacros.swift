@@ -194,19 +194,22 @@ public struct COWMacro:
     // Create storage type
     let includeableVarDecls = self.collectIncludeableVarDecls(on: declaration)
     
-    var manualInitVarDecls = [VariableDeclSyntax]()
+    let validIncludeableVarDecls = includeableVarDecls
+      .filter(\.hasSingleBinding)
+    let invalidVarDecls = includeableVarDecls
+      .filter(\.hasMultipleBindings)
     
-    for varDecl in includeableVarDecls {
-      if varDecl.bindings.count != 1 {
-        throw DiagnosticsError(syntax: varDecl, message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.", id: .undefinedBehavior, severity: .error)
-      } else {
-        // Since we have thrown when there are multiple or zero bindings
-        // found on a variable declaration. We only have to consider the
-        // case that there is only one binding here.
-        if varDecl.bindings[varDecl.bindings.startIndex].hasNoInitializer {
-          manualInitVarDecls.append(varDecl)
-        }
-      }
+    for invalidVarDecl in invalidVarDecls {
+      throw DiagnosticsError(
+        syntax: invalidVarDecl,
+        message:
+          """
+          Decalring multiple properties over one variable is an undefined \
+          behavior for the @COW macro.
+          """,
+        id: .undefinedBehavior,
+        severity: .error
+      )
     }
     
     let userStorageTypeDecls = allUserDefinedStorageTypeDecls(in: declaration)
@@ -214,12 +217,12 @@ public struct COWMacro:
     let storageTypeDecl: StructDeclSyntax
     
     if userStorageTypeDecls.isEmpty {
-      if includeableVarDecls.isEmpty {
+      if validIncludeableVarDecls.isEmpty {
         return []
       }
       storageTypeDecl = self.storageTypeDecl(
         for: declaration,
-        with: includeableVarDecls,
+        with: validIncludeableVarDecls,
         in: context
       )
     } else if userStorageTypeDecls.count == 1 {
@@ -291,25 +294,27 @@ public struct COWMacro:
         return []
       }
       
-      let storedVarDecls = self.collectStoredVarDecls(on: memberStructDecl)
-      var includeableVarDecls = self.collectIncludeableVarDecls(on: structDecl)
+      let storedVarDecls = collectStoredVarDecls(on: memberStructDecl)
+      var validIncludeableVarDecls = collectIncludeableVarDecls(
+        on: structDecl
+      ).filter(\.hasSingleBinding)
       
       // Get var decls in user storage type decl
       // Remove equivalents in include-able var decls
       
-      for (index, eachIncludeable) in includeableVarDecls.enumerated().reversed() {
+      for (index, eachIncludeable) in validIncludeableVarDecls.enumerated().reversed() {
         for eachStored in storedVarDecls {
           if eachIncludeable.isEquivalent(to: eachStored) {
-            includeableVarDecls.remove(at: index)
+            validIncludeableVarDecls.remove(at: index)
           }
         }
       }
       
-      guard !includeableVarDecls.isEmpty else {
+      guard !validIncludeableVarDecls.isEmpty else {
         return []
       }
       
-      return includeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
+      return validIncludeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
         eachVarDecl.storagePropertyDescriptors.map { desc in
           return
             """

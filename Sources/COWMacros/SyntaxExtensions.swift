@@ -62,6 +62,14 @@ extension VariableDeclSyntax {
     return !isExcluded
   }
   
+  internal var hasSingleBinding: Bool {
+    return bindings.count == 1
+  }
+  
+  internal var hasMultipleBindings: Bool {
+    return bindings.count > 1
+  }
+  
   internal var storagePropertyDescriptors: [COWStoragePropertyDescriptor] {
     bindings.compactMap { binding in
       binding.storagePropertyDescriptor(bindingKeyword)
