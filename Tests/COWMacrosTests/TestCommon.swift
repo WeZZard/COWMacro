@@ -21,6 +21,7 @@ internal let testedMacros: [String : Macro.Type] = [
   "COWExcluded" : COWExcludedMacro.self,
   "COWStorage" : COWStorageMacro.self,
   "COWStorageAddProperty" : COWStorageAddPropertyMacro.self,
+  "COWMakeStorage" : COWMakeStorageMacro.self,
 ]
 
 internal func assertMacroDiagnostics(

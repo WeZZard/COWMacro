@@ -143,6 +143,13 @@ public macro COWStorageAddProperty(
   initialValue: String
 ) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
 
+/// Marks a static method in a struct that has applied the `@COW` macro to
+/// indicate the method is a user defined static make storage method.
+///
+@attached(peer)
+public macro COWMakeStorage()
+  = #externalMacro(module: "COWMacros", type: "COWMakeStorageMacro")
+
 @propertyWrapper
 @frozen
 public struct _Box<Contents: CopyOnWriteStorage> {

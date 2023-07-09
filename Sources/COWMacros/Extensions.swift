@@ -11,20 +11,6 @@
 
 import SwiftSyntax
 
-extension StructDeclSyntax {
-  
-  internal func hasMacroApplication(_ name: String) -> Bool {
-    guard let attributes else {
-      return false
-    }
-    for each in attributes where each.hasName(name) {
-      return true
-    }
-    return false
-  }
-  
-}
-
 extension VariableDeclSyntax {
   
   internal var identifierPattern: IdentifierPatternSyntax? {
@@ -33,16 +19,6 @@ extension VariableDeclSyntax {
   
   internal var identifier: TokenSyntax? {
     identifierPattern?.identifier
-  }
-  
-  internal func hasMacroApplication(_ name: String) -> Bool {
-    guard let attributes else {
-      return false
-    }
-    for each in attributes where each.hasName(name) {
-      return true
-    }
-    return false
   }
   
   internal func firstMacroApplication(_ name: String) -> AttributeSyntax? {
@@ -220,6 +196,10 @@ extension DeclGroupSyntax {
       }
     } else if let `struct` = decl.as(StructDeclSyntax.self) {
       if !hasMemberStruct(equivalentTo: `struct`) {
+        declarations.append(decl)
+      }
+    } else if let `init` = decl.as(InitializerDeclSyntax.self) {
+      if !hasMemberInit(equivalentTo: `init`) {
         declarations.append(decl)
       }
     }

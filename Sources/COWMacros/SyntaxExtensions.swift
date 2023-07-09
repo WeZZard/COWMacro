@@ -33,17 +33,63 @@ internal struct COWStoragePropertyDescriptor {
   
 }
 
+extension WithAttributesSyntax {
+  
+  internal func hasMacroApplication(_ name: String) -> Bool {
+    guard let attributes else {
+      return false
+    }
+    for each in attributes where each.hasName(name) {
+      return true
+    }
+    return false
+  }
+  
+}
+
 extension StructDeclSyntax {
   
+  internal var typeName: TokenSyntax {
+    return TokenSyntax(
+     identifier.tokenKind,
+      presence: identifier.presence
+    )
+  }
+  
   internal var copyOnWriteStorageName: TokenSyntax? {
-    guard case .attribute(let attribute) = attributes?.first else {
+    guard let attributes else {
       return nil
     }
-    return attribute.argument?.storageName
+    
+    for eachAttribute in attributes {
+      guard case .attribute(let attribute) = eachAttribute,
+            let storageName = attribute.argument?.storageName else {
+        continue
+      }
+      return storageName
+    }
+    return nil
   }
   
   internal func isEquivalent(to other: StructDeclSyntax) -> Bool {
     return identifier == other.identifier
+  }
+  
+}
+
+extension FunctionDeclSyntax {
+  
+  internal var isStatic: Bool {
+    if let modifiers {
+      for modifier in modifiers {
+        for token in modifier.tokens(viewMode: .all) {
+          if token.tokenKind == .keyword(.static) {
+            return true
+          }
+        }
+      }
+    }
+    return true
   }
   
 }
@@ -119,7 +165,7 @@ extension PatternBindingSyntax {
   }
   
   internal var hasNoInitializer: Bool {
-    return initializer != nil
+    return initializer == nil
   }
   
   internal func storagePropertyDescriptor(
@@ -216,6 +262,28 @@ extension AttributeSyntax.Argument {
   
 }
 
+extension InitializerDeclSyntax {
+  
+  internal struct SignatureStandin: Equatable {
+    var parameters: [String]
+    var returnType: String
+  }
+  
+  internal var signatureStandin: SignatureStandin {
+    var parameters = [String]()
+    for parameter in signature.input.parameterList {
+      parameters.append(parameter.firstName.text + ":" + (parameter.type.genericSubstitution(genericParameterClause?.genericParameterList) ?? "" ))
+    }
+    let returnType = signature.output?.returnType.genericSubstitution(genericParameterClause?.genericParameterList) ?? "Void"
+    return SignatureStandin(parameters: parameters, returnType: returnType)
+  }
+  
+  internal func isEquivalent(to other: InitializerDeclSyntax) -> Bool {
+    return signatureStandin == other.signatureStandin
+  }
+  
+}
+
 extension DeclGroupSyntax {
   
   internal func hasMemberStruct(equivalentTo other: StructDeclSyntax) -> Bool {
@@ -229,8 +297,26 @@ extension DeclGroupSyntax {
     return false
   }
   
+  internal func hasMemberInit(equivalentTo other: InitializerDeclSyntax) -> Bool {
+    for member in memberBlock.members {
+      if let `init` = member.as(MemberDeclListItemSyntax.self)?.decl.as(InitializerDeclSyntax.self) {
+        if `init`.isEquivalent(to: other) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+  
   internal var isStruct: Bool {
     return self.is(StructDeclSyntax.self)
+  }
+  
+  internal func addIfNeeded<Declaration: DeclSyntaxProtocol>(
+    _ decl: Declaration?,
+    to declarations: inout [DeclSyntax]
+  ) {
+    addIfNeeded(DeclSyntax(decl), to: &declarations)
   }
   
 }

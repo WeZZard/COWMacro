@@ -12,7 +12,14 @@ import COW
 @COW
 struct Foo {
   
-  var bar: Int = 0
+  var value: Int = 0
+  
+}
+
+@COW
+struct Bar {
+  
+  var value: Int
   
 }
 
@@ -23,15 +30,31 @@ final class COWTests: XCTestCase {
     let foe = fee
     let fum = fee
     
-    XCTAssertEqual(fee.bar, 0)
-    XCTAssertEqual(foe.bar, 0)
-    XCTAssertEqual(fum.bar, 0)
+    XCTAssertEqual(fee.value, 0)
+    XCTAssertEqual(foe.value, 0)
+    XCTAssertEqual(fum.value, 0)
     
-    fee.bar = 1
+    fee.value = 1
     
-    XCTAssertEqual(fee.bar, 1)
-    XCTAssertEqual(foe.bar, 0)
-    XCTAssertEqual(fum.bar, 0)
+    XCTAssertEqual(fee.value, 1)
+    XCTAssertEqual(foe.value, 0)
+    XCTAssertEqual(fum.value, 0)
+  }
+  
+  func testCOWMakredStructRetainsValueSemantics2() {
+    var fee = Bar(value: 0)
+    let foe = fee
+    let fum = fee
+    
+    XCTAssertEqual(fee.value, 0)
+    XCTAssertEqual(foe.value, 0)
+    XCTAssertEqual(fum.value, 0)
+    
+    fee.value = 1
+    
+    XCTAssertEqual(fee.value, 1)
+    XCTAssertEqual(foe.value, 0)
+    XCTAssertEqual(fum.value, 0)
   }
   
 }
