@@ -23,6 +23,13 @@ struct Bar {
   
 }
 
+@COW
+struct Fee: Equatable {
+
+  var value: Int = 0
+
+}
+
 final class COWTests: XCTestCase {
   
   func testCOWMakredStructRetainsValueSemantics() {

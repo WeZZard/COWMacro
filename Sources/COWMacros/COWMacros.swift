@@ -384,6 +384,45 @@ extension COWMacro {
     return decl
   }
   
+  internal static let autoSynthesizingProtocolTypes: Set<String> = [
+    "Equatable",
+    "Swift.Equatable",
+    "Hashable",
+    "Swift.Hashable",
+    "Comparable",
+    "Swift.Comparable",
+    "Codable",
+    "Swift.Codable",
+    "Encodable",
+    "Swift.Encodable",
+    "Decodable",
+    "Swift.Decodable",
+  ]
+  
+  internal static func collectAutoSynthesizingProtocolConformance<
+    Declaration: DeclGroupSyntax
+  >(
+    on declaration: Declaration
+  ) -> [InheritedTypeSyntax] {
+    guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+      return []
+    }
+    
+    guard let inheritedTypes
+            = structDecl.inheritanceClause?.inheritedTypeCollection else {
+      return []
+    }
+    
+    return inheritedTypes.filter { each in
+      if let ident = each.typeName.identifier {
+        if autoSynthesizingProtocolTypes.contains(ident) {
+          return true
+        }
+      }
+      return false
+    }
+  }
+  
   internal static func createStorageTypeDecl<
     Declaration: DeclGroupSyntax,
     Context: MacroExpansionContext
@@ -396,10 +435,13 @@ extension COWMacro {
       MemberDeclListItemSyntax(decl: $0)
     }
     let inheritance = TypeInheritanceClauseSyntax {
-      // FIXME: Remove the list syntax from the builder?
-      InheritedTypeListSyntax([
+      InheritedTypeListSyntax {
         InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)
-      ])
+      }
+      // Equatable, Comparable, Hashable, Codeable
+      InheritedTypeListSyntax(
+        collectAutoSynthesizingProtocolConformance(on: declaration)
+      )
     }
     let typeName = context.makeUniqueName("Storage")
     return StructDeclSyntax(
