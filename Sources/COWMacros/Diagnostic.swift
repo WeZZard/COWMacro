@@ -49,10 +49,19 @@ internal struct COWDiagnostic: DiagnosticMessage {
   
 }
 
+internal struct COWFixIt: FixItMessage {
+  
+  var message: String
+  
+  var fixItID: MessageID
+  
+}
+
 extension DiagnosticsError {
   
   internal init<S: SyntaxProtocol>(
     syntax: S,
+    position: AbsolutePosition? = nil,
     message: String,
     domain: String = "COW",
     id: COWDiagnostic.ID,
@@ -61,12 +70,46 @@ extension DiagnosticsError {
     self.init(diagnostics: [
       Diagnostic(
         node: Syntax(syntax),
+        position: position,
         message: COWDiagnostic(
           message: message,
           domain: domain,
           id: id,
           severity: severity
         )
+      )
+    ])
+  }
+  
+  internal init<S: SyntaxProtocol>(
+    syntax: S,
+    position: AbsolutePosition? = nil,
+    message: String,
+    fixIts: String,
+    changes: [FixIt.Change],
+    domain: String = "COW",
+    id: COWDiagnostic.ID,
+    severity: DiagnosticSeverity = .error
+  ) {
+    self.init(diagnostics: [
+      Diagnostic(
+        node: Syntax(syntax),
+        position: position,
+        message: COWDiagnostic(
+          message: message,
+          domain: domain,
+          id: id,
+          severity: severity
+        ),
+        fixIts: [
+          FixIt(
+            message: COWFixIt(
+              message: fixIts,
+              fixItID: MessageID(domain: domain, id: id.rawValue)
+            ),
+            changes: changes
+          )
+        ]
       )
     ])
   }

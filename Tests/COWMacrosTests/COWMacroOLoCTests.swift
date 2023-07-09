@@ -75,7 +75,6 @@ final class COWMacroOLoCTests: XCTestCase {
           }
         }
         struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
-        
           var value: Int = 0
         }
         @COW._Box
@@ -128,20 +127,15 @@ final class COWMacroOLoCTests: XCTestCase {
           }
         }
         struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
-        
           var value: Int
         }
         @COW._Box
         var _$storage: __macro_local_7StoragefMu_
         static func _$makeStorage(value: Int) -> __macro_local_7StoragefMu_ {
-          return __macro_local_7StoragefMu_(
-              value: value
-          )
+          return __macro_local_7StoragefMu_(value: value)
         }
         init(value: Int) {
-          self._$storage = Self._$makeStorage(
-              value: value
-          )
+          self._$storage = Self._$makeStorage(value: value)
         }
       
       }
@@ -189,7 +183,6 @@ final class COWMacroOLoCTests: XCTestCase {
           }
         }
         struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage, Equatable {
-        
           var value: Int = 0
         }
         @COW._Box

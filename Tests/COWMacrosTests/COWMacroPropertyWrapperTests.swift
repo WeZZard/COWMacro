@@ -1,6 +1,6 @@
 //
 //  COWMacroPropertyWrapperTests.swift
-//  
+//
 //
 //  Created by WeZZard on 7/9/23.
 //
@@ -66,40 +66,38 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       }
       """,
       expandedSource:
+        // FIXME: Bar.Storage shall conform to COW.CopyOnWriteStorage
       """
       
       struct Bar {
-        
-      
-        struct Storage: COW.CopyOnWriteStorage {
+        struct Storage {
           
           @Capitalized
           var value: String
           
         }
         
-        var value: String {
+        var value: String  {
           get {
-            _$storage.value = newValue
+            return _$storage.value
           }
           set {
             _$storage.value = newValue
           }
         }
-      
         @COW._Box
         var _$storage: Storage
-      
-        static func _$makeStorage(value: String) -> Storage {
+        static func _$makeStorage(value: String ) -> Storage {
           return Storage(value: value)
         }
-      
-        init(value: String) {
-          _$storage = self._$makeStorage(value: String)
+        init(value: String ) {
+          self._$storage = Self._$makeStorage(value: value)
         }
+      
       }
       """,
-      macros: testedMacros
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
     )
   }
   
@@ -142,7 +140,7 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         
         var value: String {
           get {
-            _$storage.value = newValue
+            return _$storage.value
           }
           set {
             _$storage.value = newValue
@@ -156,44 +154,43 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       }
       """,
       expandedSource:
+        // FIXME: Foo.Storage shall conform to COW.CopyOnWriteStorage
       """
       
       struct Foo {
-        
+        struct Storage {
       
-        struct Storage: COW.CopyOnWriteStorage {
-          
           @Capitalized
           var value: String
       
           init(value: Capitalized<String>) {
             _value = value
           }
-          
+      
         }
-        
-        var value: String {
+      
+        var value: String  {
           get {
-            _$storage.value = newValue
+            return _$storage.value
           }
           set {
             _$storage.value = newValue
           }
         }
       
+        init(value: Capitalized<String>) {
+          self._$storage = Self._$makeStorage(value: value)
+        }
         @COW._Box
         var _$storage: Storage
-      
         static func _$makeStorage(value: Capitalized<String>) -> Storage {
           return Storage(value: value)
         }
       
-        init(value: Capitalized<String>) {
-          _$storage = self._$makeStorage(value: String)
-        }
       }
       """,
-      macros: testedMacros
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
     )
   }
   

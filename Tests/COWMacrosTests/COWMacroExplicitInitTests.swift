@@ -46,7 +46,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
   /// }
   /// ```
   ///
-  func testExplicitInits() {
+  func testExplicitInits1() {
     assertMacroExpansion(
       """
       @COW
@@ -72,35 +72,71 @@ final class COWMacroExplicitInitTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-        
-        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
-        
-          var value: Int
-      
-          init(value: Int) {
-            self.value = value
-          }
-      
-        }
-        
-        @COW._Box
-        var _$storage: __macro_local_7StoragefMu_
-        
-        static func _$makeStorage(value: Int) -> __macro_local_7StoragefMu_ {
-          return __macro_local_7StoragefMu_(value: value)
-        }
       
         init(value: Int) {
           self.value = value
         }
-      
       }
       """,
       diagnostics: [
-        DiagnosticSpec(message: "@COW macro requires you to insert `self._$storage = Self._$makeStorage(value: <#value#>)` before initializing the properties to make the code compilable.", line: 6, column: 3),
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
       ],
       macros: testedMacros,
       indentationWidth: .spaces(2)
+    )
+  }
+  
+  func testExplicitInits2() {
+    assertMacroExpansion(
+        """
+        @COW
+        struct Foo {
+        
+          var value: Int
+        
+          init(value: Int) {
+            self._$storage = Self._$makeStorage(value: value)
+            self.value = value
+          }
+        }
+        """,
+        expandedSource:
+        """
+        
+        struct Foo {
+          
+          var value: Int {
+            get {
+              return _$storage.value
+            }
+            set {
+              _$storage.value = newValue
+            }
+          }
+        
+          init(value: Int) {
+            self._$storage = Self._$makeStorage(value: value)
+            self.value = value
+          }
+          struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
+            var value: Int
+          }
+          @COW._Box
+          var _$storage: __macro_local_7StoragefMu_
+          static func _$makeStorage(value: Int) -> __macro_local_7StoragefMu_ {
+            return __macro_local_7StoragefMu_(value: value)
+          }
+        }
+        """,
+        macros: testedMacros,
+        indentationWidth: .spaces(2)
     )
   }
   
@@ -137,7 +173,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
   /// }
   /// ```
   ///
-  func testExplicitInits_CustomStorage_ExplicitInit() {
+  func testExplicitInits_CustomStorage_ExplicitInit1() {
     assertMacroExpansion(
       """
       @COW
@@ -154,17 +190,26 @@ final class COWMacroExplicitInitTests: XCTestCase {
       
         }
       
+        var value: Int {
+          get {
+            return _$storage.value
+          }
+          set {
+            _$storage.value = newValue
+          }
+        }
+      
         init(value: Int) {
           self.value = value
         }
       }
       """,
       expandedSource:
+      // FIXME: Foo.Bar shall conform to CopyOnWriteStorage
       """
-      @COW
-      struct Foo {
       
-        struct Bar: CopyOnWriteStorage {
+      struct Foo {
+        struct Bar {
       
           var value: Int
       
@@ -174,11 +219,13 @@ final class COWMacroExplicitInitTests: XCTestCase {
       
         }
       
-        @COW._Box
-        var _$storage: Bar
-        
-        static func _$makeStorage(value: Int) -> Bar {
-          return Bar(value: value)
+        var value: Int  {
+          get {
+            return _$storage.value
+          }
+          set {
+            _$storage.value = newValue
+          }
         }
       
         init(value: Int) {
@@ -186,11 +233,92 @@ final class COWMacroExplicitInitTests: XCTestCase {
         }
       }
       """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 24,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+      ],
       macros: testedMacros,
       indentationWidth: .spaces(2)
     )
   }
   
+  func testExplicitInits_CustomStorage_ExplicitInit2() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        @COWStorage
+        struct Bar {
+      
+          var value: Int
+      
+          init(value: Int) {
+            self.value = value
+          }
+      
+        }
+      
+        var value: Int {
+          get {
+            return _$storage.value
+          }
+          set {
+            _$storage.value = newValue
+          }
+        }
+      
+        init(value: Int) {
+          self._$storage = Self._$makeStorage(value: value)
+          self.value = value
+        }
+      }
+      """,
+      expandedSource:
+      // FIXME: Foo.Bar shall conform to CopyOnWriteStorage
+      """
+      
+      struct Foo {
+        struct Bar {
+      
+          var value: Int
+      
+          init(value: Int) {
+            self.value = value
+          }
+      
+        }
+      
+        var value: Int  {
+          get {
+            return _$storage.value
+          }
+          set {
+            _$storage.value = newValue
+          }
+        }
+      
+        init(value: Int) {
+          self._$storage = Self._$makeStorage(value: value)
+          self.value = value
+        }
+        @COW._Box
+        var _$storage: Bar
+        static func _$makeStorage(value: Int) -> Bar {
+          return Bar(value: value)
+        }
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
   
   /// (
   ///   struct

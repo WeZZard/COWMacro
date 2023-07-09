@@ -66,7 +66,7 @@ final class COWMacroDiagnosticTests: XCTestCase {
   }
   
   func testDiagnosesUndefinedBehaviorWithOneVariableDeclMultipleBindings() {
-    assertMacroDiagnostics(
+    assertMacroExpansion(
       """
       @COW
       struct Fee {
@@ -79,11 +79,32 @@ final class COWMacroDiagnosticTests: XCTestCase {
         var foo: Int = 0, bar: Int = 0
         
       }
+      """
+      ,
+      expandedSource:
+      """
+      
+      struct Fee {
+        struct Storage {
+          
+        }
+        
+        var foo: Int = 0, bar: Int = 0
+        
+      }
       """,
       diagnostics: [
-        DiagnosticSpec(message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.", line: 9, column: 3),
+        DiagnosticSpec(
+          message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.",
+          line: 1,
+          column: 1,
+          fixIts: [
+            FixItSpec(message: "Split the variable decalrations with multiple variable bindings into seperate decalrations.")
+          ]
+        ),
       ],
-      macros: testedMacros)
+      macros: testedMacros
+    )
   }
   
 }

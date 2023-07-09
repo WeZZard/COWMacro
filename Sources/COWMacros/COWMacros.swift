@@ -28,7 +28,7 @@ extension NameLookupable {
   internal static var qualifiedName: String {
     return "\(moduleName).\(name)"
   }
-
+  
   internal static var type: TypeSyntax {
     return "\(raw: qualifiedName)"
   }
@@ -94,7 +94,7 @@ public struct COWMacro:
     }
     
     let storageName = structDecl.copyOnWriteStorageName
-      ?? defaultStorageName
+    ?? defaultStorageName
     
     // Create storage member
     let storageMemberDecl = createStorageMemberDecl(
@@ -105,12 +105,12 @@ public struct COWMacro:
     
     // Create make storage method if needed
     let makeStorageMethodDecl =
-      try createOrUseExistedMakeStorageMethodDeclIfNeeded(
-          for: structDecl,
-          storageTypeDecl: storageTypeDecl,
-          expandedBy: node,
-          typeAnnoatedVarDecls: typeAnnoatedVarDecls
-      )
+    try createOrUseExistedMakeStorageMethodDeclIfNeeded(
+      for: structDecl,
+      storageTypeDecl: storageTypeDecl,
+      expandedBy: node,
+      typeAnnoatedVarDecls: typeAnnoatedVarDecls
+    )
     
     // Create explicit initializer if needed
     let explicitInitializerDecl = try createExplicitInitializerDeclIfNeeded(
@@ -284,12 +284,13 @@ extension COWMacro {
   internal static func collectIncludeableVarDecls<
     Declaration: DeclGroupSyntax
   >(on declaration: Declaration) -> [VariableDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { eachItem in
+    return declaration.memberBlock.members.compactMap {
+      eachItem -> VariableDeclSyntax? in
       guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
             varDecl.isIncludeable else {
         return nil
       }
-      return varDecl
+      return varDecl.trimmed
     }
   }
   
@@ -301,7 +302,7 @@ extension COWMacro {
             varDecl.bindings.allSatisfy(\.isStored) else {
         return nil
       }
-      return varDecl
+      return varDecl.trimmed
     }
   }
   
@@ -324,14 +325,39 @@ extension COWMacro {
     let invalidVarDecls = collectedVarDecls
       .filter(\.hasMultipleBindings)
     
-    for invalidVarDecl in invalidVarDecls {
-      throw DiagnosticsError(
-        syntax: invalidVarDecl,
-        message:
-          """
-          Decalring multiple properties over one variable is an undefined \
-          behavior for the @COW macro.
-          """,
+    if !invalidVarDecls.isEmpty {
+      let oldMembers = declaration.memberBlock.members
+      
+      var newMembers = declaration.memberBlock.members
+      
+      for eachInvalid in invalidVarDecls {
+        for (index, eachMember) in newMembers.enumerated().reversed() {
+          guard let varDecl = eachMember.decl.as(VariableDeclSyntax.self) else {
+            continue
+          }
+          if varDecl.isEquivalent(to: eachInvalid) {
+            let allReplaced = eachInvalid.bindings.map { eachBinding in
+              let fixedBinding = eachBinding
+                .with(\.trailingComma, nil)
+              return eachInvalid
+                .with(\.bindings, PatternBindingListSyntax([fixedBinding]))
+                .with(\.leadingTrivia, .newline)
+            }
+            newMembers = newMembers.removing(childAt: index)
+            for eachReplaced in allReplaced.reversed() {
+              newMembers = newMembers.inserting(MemberDeclListItemSyntax(decl: eachReplaced), at: index)
+            }
+          }
+        }
+      }
+      
+      throw DiagnosticsError.init(
+        syntax: declaration,
+        message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.",
+        fixIts: "Split the variable decalrations with multiple variable bindings into seperate decalrations.",
+        changes: [
+          .replace(oldNode: Syntax(oldMembers), newNode: Syntax(newMembers))
+        ],
         id: .undefinedBehavior,
         severity: .error
       )
@@ -616,19 +642,7 @@ extension COWMacro {
       """
     ) {
       CodeBlockItemListSyntax {
-        CodeBlockItemSyntax(item: .expr("return \(storageTypeName)("))
-      }
-      CodeBlockItemListSyntax(
-        parameters.map { eachParam in
-          CodeBlockItemSyntax(item: .expr(
-            """
-                \(eachParam.firstName): \(eachParam.secondName ?? eachParam.firstName)
-            """
-          ))
-        }
-      )
-      CodeBlockItemListSyntax {
-        CodeBlockItemSyntax(item: .expr(")"))
+        CodeBlockItemSyntax(item: .expr(makeStorageExpr(storageTypeName: storageTypeName, parameters: parameters)))
       }
     }
     
@@ -638,15 +652,23 @@ extension COWMacro {
   internal static func collectExplicitInitializers<
     Declaration: DeclGroupSyntax
   >(on declaration: Declaration) -> [InitializerDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { each in
-      each.as(InitializerDeclSyntax.self)
+    return declaration.memberBlock.members.compactMap { eachItem in
+      eachItem.decl.as(InitializerDeclSyntax.self)
     }
   }
   
   internal static func checkExplicitInitializers(
-    _ initializers: [InitializerDeclSyntax]
+    _ initializers: [InitializerDeclSyntax],
+    storageName: TokenSyntax,
+    makeStorageMethodDecl: FunctionDeclSyntax
   ) throws {
-    
+    for eachInit in initializers {
+      try checkInitializerRequireExplicitInvocationOfMakeStorage(
+        eachInit,
+        storageName: storageName,
+        makeStorageMethodDecl: makeStorageMethodDecl
+      )
+    }
   }
   
   internal static func createExplicitInitializerDeclIfNeeded<
@@ -670,7 +692,11 @@ extension COWMacro {
     let explicitInitializers = collectExplicitInitializers(on: declaration)
     
     guard explicitInitializers.isEmpty else {
-      try checkExplicitInitializers(explicitInitializers)
+      try checkExplicitInitializers(
+        explicitInitializers,
+        storageName: storageName,
+        makeStorageMethodDecl: makeStorageMethodDecl
+      )
       return nil
     }
     
@@ -685,30 +711,148 @@ extension COWMacro {
     let initDecl = try InitializerDeclSyntax("init(\(FunctionParameterListSyntax(parameters)))") {
       CodeBlockItemListSyntax {
         CodeBlockItemSyntax(item: .expr(
-          """
-          self.\(storageName) = Self.\(makeStorageName)(
-          """
-        ))
-      }
-      CodeBlockItemListSyntax(
-        parameters.map { eachParam in
-          CodeBlockItemSyntax(item: .expr(
-            """
-                \(eachParam.firstName): \(eachParam.secondName ?? eachParam.firstName)
-            """
-          ))
-        }
-      )
-      CodeBlockItemListSyntax {
-        CodeBlockItemSyntax(item: .expr(
-          """
+          initStorageExpr(
+            storageName: storageName,
+            makeStorageName: makeStorageName,
+            parameters: parameters,
+            usesTemplateArguments: false
           )
-          """
         ))
       }
     }
     
     return initDecl
+  }
+  
+  internal static func makeStorageExpr(
+    storageTypeName: TokenSyntax,
+    parameters: [FunctionParameterSyntax]
+  ) -> ExprSyntax {
+    return
+      """
+      return \(storageTypeName)\(functionCallExpr(parameters: parameters, usesTemplateArguments: false))
+      """
+  }
+  
+  internal static func initStorageExpr(
+    storageName: TokenSyntax,
+    makeStorageName: TokenSyntax,
+    parameters: [FunctionParameterSyntax],
+    usesTemplateArguments: Bool
+  ) -> ExprSyntax {
+    return
+      """
+      self.\(storageName) = Self.\(makeStorageName)\(functionCallExpr(parameters: parameters, usesTemplateArguments: usesTemplateArguments))
+      """
+  }
+  
+  internal static func functionCallExpr(
+    parameters: [FunctionParameterSyntax],
+    usesTemplateArguments: Bool
+  ) -> ExprSyntax {
+    let args = parameters.map { eachParam -> TupleExprElementSyntax in
+      let label = eachParam.firstName
+      let name = eachParam.secondName ?? eachParam.firstName
+      let nameToken: TokenSyntax
+      if usesTemplateArguments {
+        nameToken = TokenSyntax(.identifier("<#\(name.text)#>"), presence: .present)
+      } else {
+        nameToken = name
+      }
+      var syntax = TupleExprElementSyntax(label: label.trimmed.text, expression: IdentifierExprSyntax(identifier: nameToken))
+      syntax.colon?.trailingTrivia = .spaces(1)
+      return syntax
+    }
+    return
+      """
+      \(TupleExprSyntax(elementList: TupleExprElementListSyntax(args)))
+      """
+  }
+  
+  internal static func checkInitializerRequireExplicitInvocationOfMakeStorage(
+    _ initializer: InitializerDeclSyntax,
+    storageName: TokenSyntax,
+    makeStorageMethodDecl: FunctionDeclSyntax
+  ) throws {
+    guard let body = initializer.body else {
+      return
+    }
+    for eachStmt in body.statements {
+      guard case .expr(let expr) = eachStmt.item else {
+        continue
+      }
+      guard let seqExpr = expr.as(SequenceExprSyntax.self) else {
+        continue
+      }
+      guard seqExpr.elements.count == 3 else {
+        continue
+      }
+      
+      let i1 = seqExpr.elements.startIndex
+      let i2 = seqExpr.elements.index(i1, offsetBy: 1)
+      let i3 = seqExpr.elements.index(i1, offsetBy: 2)
+      
+      let expr1 = seqExpr.elements[i1]
+      let expr2 = seqExpr.elements[i2]
+      let expr3 = seqExpr.elements[i3]
+      
+      guard let storage = expr1.as(MemberAccessExprSyntax.self) else {
+        continue
+      }
+      guard storage.base?.as(IdentifierExprSyntax.self)?.identifier.tokenKind == .keyword(.self) else {
+        continue
+      }
+      guard storage.name.tokenKind == storageName.tokenKind else {
+        continue
+      }
+      guard let _ = expr2.as(AssignmentExprSyntax.self) else {
+        continue
+      }
+      guard let makeStorageCall = expr3.as(FunctionCallExprSyntax.self) else {
+        continue
+      }
+      guard let makeStorage = makeStorageCall.calledExpression.as(MemberAccessExprSyntax.self) else {
+        continue
+      }
+      guard makeStorage.base?.as(IdentifierExprSyntax.self)?.identifier.tokenKind == .keyword(.Self) else {
+        continue
+      }
+      guard makeStorage.name.tokenKind == makeStorageMethodDecl.identifier.tokenKind else {
+        continue
+      }
+      return
+    }
+    
+    let makeStorageName = makeStorageMethodDecl.identifier
+    let parameters = makeStorageMethodDecl.signature.input.parameterList.map({$0})
+    
+    let initStorage = CodeBlockItemSyntax(item: .expr(
+      initStorageExpr(
+        storageName: storageName,
+        makeStorageName: makeStorageName,
+        parameters: parameters,
+        usesTemplateArguments: true
+      )
+    ))
+    
+    let fixedStmts = body.statements.prepending(initStorage)
+    
+    throw DiagnosticsError(
+      syntax: initializer,
+      message:
+        """
+        @COW macro requires you to initialize the copy-on-write storage before initializing the properties.
+        """,
+      fixIts: "Initializes copy-on-write storage to make the @COW macro work.",
+      changes: [
+        FixIt.Change.replace(
+          oldNode: Syntax(body.statements),
+          newNode: Syntax(fixedStmts)
+        )
+      ],
+      id: .requiresManuallyInitializeStorage,
+      severity: .error
+    )
   }
   
 }
@@ -746,15 +890,13 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
       )
     }
     
-    // TODO: Adopt init accessor in the future
-    
     let getAccessor: AccessorDeclSyntax =
       """
       get {
         return \(storageName).\(identifier)
       }
       """
-
+    
     let setAccessor: AccessorDeclSyntax =
       """
       set {
