@@ -71,12 +71,12 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       
       struct Bar {
         struct Storage {
-          
+      
           @Capitalized
           var value: String
-          
+      
         }
-        
+      
         var value: String  {
           get {
             return _$storage.value

@@ -24,6 +24,8 @@ final class COWStorageMacroTests: XCTestCase {
       
       struct Foo {
       }
+      extension Foo: COW.CopyOnWriteStorage {
+      }
       """,
       macros: testedMacros
     )
@@ -40,6 +42,8 @@ final class COWStorageMacroTests: XCTestCase {
       
       enum Foo {
       }
+      extension Foo: COW.CopyOnWriteStorage {
+      }
       """,
       macros: testedMacros
     )
@@ -55,6 +59,8 @@ final class COWStorageMacroTests: XCTestCase {
       expandedSource: """
       
       class Foo {
+      }
+      extension Foo: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros

@@ -63,7 +63,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
       """
       
       struct Foo {
-        
+      
         var value: Int {
           get {
             return _$storage.value
@@ -111,7 +111,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
         """
         
         struct Foo {
-          
+        
           var value: Int {
             get {
               return _$storage.value

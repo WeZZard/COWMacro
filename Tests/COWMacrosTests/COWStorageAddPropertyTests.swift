@@ -31,6 +31,8 @@ final class COWStorageAddPropertyTests: XCTestCase {
       struct Foo {
         var value : Int = 0
       }
+      extension Foo: COW.CopyOnWriteStorage {
+      }
       """,
       macros: testedMacros,
       indentationWidth: .spaces(2)
@@ -54,6 +56,8 @@ final class COWStorageAddPropertyTests: XCTestCase {
       
       struct Foo {
         var value = 0
+      }
+      extension Foo: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros,

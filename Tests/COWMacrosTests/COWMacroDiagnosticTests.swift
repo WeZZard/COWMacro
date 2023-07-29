@@ -86,11 +86,11 @@ final class COWMacroDiagnosticTests: XCTestCase {
       
       struct Fee {
         struct Storage {
-          
+      
         }
-        
+      
         var foo: Int = 0, bar: Int = 0
-        
+      
       }
       """,
       diagnostics: [

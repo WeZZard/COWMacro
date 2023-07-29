@@ -46,7 +46,7 @@ public macro COWIncluded(storageName: String) =
 /// - Warning: Use `@COWExcluded` in a `#if ... #else ... #end` config is an
 /// undefined behavior.
 ///
-@attached(accessor)
+@attached(accessor, names: named(willSet))
 public macro COWExcluded() =
   #externalMacro(module: "COWMacros", type: "COWExcludedMacro")
 

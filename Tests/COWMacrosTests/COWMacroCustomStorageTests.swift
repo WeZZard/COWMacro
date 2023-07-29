@@ -56,9 +56,9 @@ final class COWMacroCustomStorageTests: XCTestCase {
       
       struct Foo: Equatable {
         struct Bar: Equatable {
-          
+      
           var value: String
-          
+      
         }
       
         var value: String  {
