@@ -65,7 +65,7 @@ final class COWMacroDiagnosticTests: XCTestCase {
     )
   }
   
-  func testDiagnosesUndefinedBehaviorWithOneVariableDeclMultipleBindings() {
+  func testDiagnosesUndefinedBehaviorGivenOneVariableDeclMultipleBindings() {
     assertMacroExpansion(
       """
       @COW
@@ -95,9 +95,9 @@ final class COWMacroDiagnosticTests: XCTestCase {
       """,
       diagnostics: [
         DiagnosticSpec(
-          message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.",
-          line: 1,
-          column: 1,
+          message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
+          line: 4,
+          column: 3,
           fixIts: [
             FixItSpec(message: "Split the variable decalrations with multiple variable bindings into seperate decalrations.")
           ]

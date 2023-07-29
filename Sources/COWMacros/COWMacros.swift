@@ -352,8 +352,8 @@ extension COWMacro {
       }
       
       throw DiagnosticsError.init(
-        syntax: declaration,
-        message: "Decalring multiple properties over one variable is an undefined behavior for the @COW macro.",
+        syntax: oldMembers,
+        message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
         fixIts: "Split the variable decalrations with multiple variable bindings into seperate decalrations.",
         changes: [
           .replace(oldNode: Syntax(oldMembers), newNode: Syntax(newMembers))
