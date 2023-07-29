@@ -181,9 +181,9 @@ public struct COWMacro:
       // Get var decls in user storage type decl
       // Remove equivalents in include-able var decls
       
-      for (index, eachIncludeable) in validIncludeableVarDecls.enumerated().reversed() {
-        for eachStored in storedVarDecls {
-          if eachIncludeable.isEquivalent(to: eachStored) {
+      for (index, eachVar) in validIncludeableVarDecls.enumerated().reversed() {
+        for eachStoredVar in storedVarDecls {
+          if eachVar.isEquivalent(to: eachStoredVar) {
             validIncludeableVarDecls.remove(at: index)
           }
         }
@@ -223,7 +223,12 @@ extension COWMacro {
             = declaration.asProtocol(IdentifiedDeclSyntax.self) else {
       throw DiagnosticsError(
         syntax: node,
-        message: "@COW applied on an non-identified decl syntax \(declaration). This should be considered as a bug in compiler of the COW macro compiler plugin.",
+        message:
+        """
+        @COW applied on an non-identified decl syntax \(declaration). \
+        This should be considered as a bug in compiler or the COW macro \
+        compiler plugin.
+        """,
         id: .internalInconsistency
       )
     }
@@ -345,7 +350,9 @@ extension COWMacro {
             }
             newMembers = newMembers.removing(childAt: index)
             for eachReplaced in allReplaced.reversed() {
-              newMembers = newMembers.inserting(MemberDeclListItemSyntax(decl: eachReplaced), at: index)
+              newMembers = newMembers.inserting(
+                MemberDeclListItemSyntax(decl: eachReplaced), at: index
+              )
             }
           }
         }
@@ -353,8 +360,16 @@ extension COWMacro {
       
       throw DiagnosticsError.init(
         syntax: oldMembers,
-        message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
-        fixIts: "Split the variable decalrations with multiple variable bindings into seperate decalrations.",
+        message:
+          """
+          Decalring multiple stored properties over one variable declaration \
+          is an undefined behavior for the @COW macro.
+          """,
+        fixIts:
+          """
+          Split the variable decalrations with multiple variable bindings into \
+          seperate decalrations.
+          """,
         changes: [
           .replace(oldNode: Syntax(oldMembers), newNode: Syntax(newMembers))
         ],
@@ -636,12 +651,17 @@ extension COWMacro {
     
     let storageTypeName = storageTypeDecl.typeName
     
+    let parametersSynax = FunctionParameterListSyntax(parameters)
+    
     let funcDecl = try FunctionDeclSyntax(
       """
-      static func _$makeStorage(\(FunctionParameterListSyntax(parameters))) -> \(storageTypeName)
+      static func _$makeStorage(\(parametersSynax)) -> \(storageTypeName)
       """
     ) {
-      createMakeStorageStmt(storageTypeName: storageTypeName, parameters: parameters)
+      createMakeStorageStmt(
+        storageTypeName: storageTypeName,
+        parameters: parameters
+      )
     }
     
     return funcDecl
@@ -706,7 +726,9 @@ extension COWMacro {
     
     let makeStorageName = makeStorageMethodDecl.identifier.trimmed
     
-    let initDecl = try InitializerDeclSyntax("init(\(FunctionParameterListSyntax(parameters)))") {
+    let parametersSynax = FunctionParameterListSyntax(parameters)
+    
+    let initDecl = try InitializerDeclSyntax("init(\(parametersSynax))") {
       createInitStorageExpr(
         storageName: storageName,
         makeStorageName: makeStorageName,
@@ -730,7 +752,10 @@ extension COWMacro {
       expression: FunctionCallExprSyntax(
         calledExpression: IdentifierExprSyntax(identifier: storageTypeName)
       ) {
-        createArgListSyntax(parameters: parameters, usesTemplateArguments: false)
+        createArgListSyntax(
+          parameters: parameters,
+          usesTemplateArguments: false
+        )
       }
       .with(\.leftParen, .leftParenToken())
       .with(\.rightParen, .rightParenToken())
@@ -824,7 +849,8 @@ extension COWMacro {
       guard let storage = expr1.as(MemberAccessExprSyntax.self) else {
         continue
       }
-      guard storage.base?.as(IdentifierExprSyntax.self)?.identifier.tokenKind == .keyword(.self) else {
+      let storageBase = storage.base?.as(IdentifierExprSyntax.self)?.identifier
+      guard storageBase?.tokenKind == .keyword(.self) else {
         continue
       }
       guard storage.name.tokenKind == storageName.tokenKind else {
@@ -836,20 +862,28 @@ extension COWMacro {
       guard let makeStorageCall = expr3.as(FunctionCallExprSyntax.self) else {
         continue
       }
-      guard let makeStorage = makeStorageCall.calledExpression.as(MemberAccessExprSyntax.self) else {
+      guard let makeStorage = makeStorageCall
+        .calledExpression
+        .as(MemberAccessExprSyntax.self) else {
         continue
       }
-      guard makeStorage.base?.as(IdentifierExprSyntax.self)?.identifier.tokenKind == .keyword(.Self) else {
+      let makeStorageBase = makeStorage.base?.as(IdentifierExprSyntax.self)?
+        .identifier
+      guard makeStorageBase?.tokenKind == .keyword(.Self) else {
         continue
       }
-      guard makeStorage.name.tokenKind == makeStorageMethodDecl.identifier.tokenKind else {
+      guard makeStorage.name.tokenKind ==
+              makeStorageMethodDecl.identifier.tokenKind else {
         continue
       }
       return
     }
     
     let makeStorageName = makeStorageMethodDecl.identifier
-    let parameters = makeStorageMethodDecl.signature.input.parameterList.map({$0})
+    let parameters = makeStorageMethodDecl
+      .signature
+      .input
+      .parameterList.map({$0})
     
     let initStorage = createInitStorageExpr(
         storageName: storageName,
@@ -858,13 +892,15 @@ extension COWMacro {
         usesTemplateArguments: true
       )
     
-    let fixedStmts = body.statements.prepending(.init(item: .expr(ExprSyntax(initStorage))))
+    let fixedStmts = body.statements
+      .prepending(.init(item: .expr(ExprSyntax(initStorage))))
     
     throw DiagnosticsError(
       syntax: initializer,
       message:
         """
-        @COW macro requires you to initialize the copy-on-write storage before initializing the properties.
+        @COW macro requires you to initialize the copy-on-write storage before \
+        initializing the properties.
         """,
       fixIts: "Initializes copy-on-write storage to make the @COW macro work.",
       changes: [
@@ -907,7 +943,10 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
     guard let storageName = node.argument?.storageName else {
       throw DiagnosticsError(
         syntax: node,
-        message: "The macro @COWIncluded shall have storage name get specified.",
+        message:
+          """
+          The macro @COWIncluded shall have storage name get specified.
+          """,
         id: .internalInconsistency,
         severity: .error
       )
@@ -1033,7 +1072,11 @@ public struct COWStorageAddPropertyMacro: MemberMacro, NameLookupable {
     guard structDecl.hasMacroApplication(COWStorageMacro.name) else {
       throw DiagnosticsError(
         syntax: node,
-        message: "@COWStorageAddProperty can only be applied on @COWStorage marked struct types.",
+        message:
+          """
+          @COWStorageAddProperty can only be applied on @COWStorage marked \
+          struct types.
+          """,
         id: .requiresCOWStorage
       )
     }
@@ -1049,7 +1092,11 @@ public struct COWStorageAddPropertyMacro: MemberMacro, NameLookupable {
     guard let descriptor = arg.storagePropertyDescriptor else {
       throw DiagnosticsError(
         syntax: node,
-        message: "Cannot create variable declaration with argument for macro @COWStorageAddProperty: \(arg.trimmed.debugDescription)",
+        message:
+          """
+          Cannot create variable declaration with argument for macro \
+          @COWStorageAddProperty: \(arg.trimmed.debugDescription)
+          """,
         id: .internalInconsistency
       )
     }
