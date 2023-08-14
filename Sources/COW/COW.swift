@@ -115,7 +115,7 @@ public macro COWExcluded() =
 /// - Warning: Use `@COWStorage` in a `#if ... #else ... #end` config is
 /// an undefined behavior.
 ///
-@attached(conformance)
+@attached(extension, conformances: CopyOnWriteStorage)
 public macro COWStorage() =
   #externalMacro(module: "COWMacros", type: "COWStorageMacro")
 

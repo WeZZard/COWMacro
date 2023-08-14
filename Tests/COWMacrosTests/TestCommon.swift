@@ -10,6 +10,7 @@
 @_implementationOnly import SwiftParser
 @_implementationOnly import SwiftSyntax
 @_implementationOnly import SwiftSyntaxMacros
+@_implementationOnly import SwiftSyntaxMacroExpansion
 @_implementationOnly @testable import SwiftSyntaxMacrosTestSupport
 @_implementationOnly import XCTest
 
