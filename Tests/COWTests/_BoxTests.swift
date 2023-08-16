@@ -67,4 +67,128 @@ final class _BoxTests: XCTestCase {
     
   }
   
+  func testBoxProjectsItself() {
+    struct Value: CopyOnWriteStorage, Equatable {
+      
+      var value: Int
+      
+    }
+    
+    @_Box
+    var value: Value = Value(value: 0)
+    
+    XCTAssertTrue($value._buffer === _value._buffer)
+    
+  }
+  
+  func testBoxProjectedValueModifiesItself() {
+    struct Value: CopyOnWriteStorage {
+      
+      var value: Int
+      
+    }
+    
+    @_Box
+    var value1: Value = Value(value: 1)
+    
+    @_Box
+    var value2: Value = Value(value: 2)
+    
+    XCTAssertTrue(_value1._buffer !== _value2._buffer)
+    
+    $value1 = $value2
+    
+    XCTAssertTrue(_value1._buffer === _value2._buffer)
+    
+  }
+  
+  func testBoxConformsToEquatableWhenTheContentsTypeConformsToEquatable() {
+    struct Value: CopyOnWriteStorage, Equatable {
+      
+      var value: Int
+      
+    }
+    
+    @_Box
+    var value1: Value = Value(value: 1)
+    
+    @_Box
+    var value2: Value = Value(value: 1)
+    
+    XCTAssertEqual(_value1, _value2)
+  }
+  
+  func testBoxConformsToHashableWhenTheContentsTypeConformsToHashable() {
+    struct Value: CopyOnWriteStorage, Hashable {
+      
+      var value: Int
+      
+    }
+    
+    @_Box
+    var value1: Value = Value(value: 1)
+    
+    @_Box
+    var value2: Value = Value(value: 1)
+    
+    XCTAssertEqual(_value1.hashValue, _value2.hashValue)
+  }
+  
+  func testBoxConformsToComparableWhenTheContentsTypeConformsToComparable() {
+    struct Value: CopyOnWriteStorage, Comparable {
+      
+      var value: Int
+      
+      static func < (lhs: Value, rhs: Value) -> Bool {
+        return lhs.value < rhs.value
+      }
+      
+    }
+    
+    @_Box
+    var value1: Value = Value(value: 1)
+    
+    @_Box
+    var value2: Value = Value(value: 2)
+    
+    @_Box
+    var value3: Value = Value(value: 3)
+    
+    XCTAssertTrue(_value1 < _value2)
+    XCTAssertTrue(_value2 > _value1)
+    
+    XCTAssertTrue(_value1 == _value1)
+    
+    XCTAssertTrue(_value2 < _value3)
+    XCTAssertTrue(_value3 > _value2)
+  }
+  
+  func testBoxConformsToCodableWhenTheContentsTypeConformsToCodable() {
+    struct Value: CopyOnWriteStorage, Codable, Equatable {
+      
+      var value: Int
+      
+    }
+    
+    do {
+      
+      @_Box
+      var value1: Value = Value(value: 100)
+      
+      let encoder = JSONEncoder()
+      
+      let data = try encoder.encode(_value1)
+      
+      let decoder = JSONDecoder()
+      
+      let value2 = try decoder.decode(_Box<Value>.self, from: data)
+     
+      XCTAssertEqual(_value1, value2)
+      
+    } catch _ {
+      XCTFail()
+    }
+    
+  }
+  
 }

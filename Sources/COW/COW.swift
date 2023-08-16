@@ -175,6 +175,17 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   }
   
   @inlinable
+  public var projectedValue: _Box {
+    _read {
+      yield self
+    }
+    _modify {
+      _makeUniqueBufferIfNeeded()
+      yield &self
+    }
+  }
+  
+  @inlinable
   public mutating func _makeUniqueBufferIfNeeded() {
     guard _slowPath(!isKnownUniquelyReferenced(&_buffer)) else {
       return
