@@ -74,11 +74,11 @@ final class COWMacroOLoCTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
+        struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int = 0
         }
         @COW._Box
-        var _$storage: __macro_local_7StoragefMu_ = __macro_local_7StoragefMu_()
+        var _$storage: _$COWStorage = _$COWStorage()
       
       }
       """,
@@ -126,16 +126,13 @@ final class COWMacroOLoCTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
+        struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int
         }
         @COW._Box
-        var _$storage: __macro_local_7StoragefMu_
-        static func _$makeStorage(value: Int) -> __macro_local_7StoragefMu_ {
-          return __macro_local_7StoragefMu_(value: value)
-        }
+        var _$storage: _$COWStorage
         init(value: Int) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = _$COWStorage(value: value)
         }
       
       }
@@ -182,11 +179,11 @@ final class COWMacroOLoCTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage, Equatable {
+        struct _$COWStorage: COW.CopyOnWriteStorage, Equatable {
           var value: Int = 0
         }
         @COW._Box
-        var _$storage: __macro_local_7StoragefMu_ = __macro_local_7StoragefMu_()
+        var _$storage: _$COWStorage = _$COWStorage()
       
       }
       """,

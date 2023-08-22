@@ -38,11 +38,11 @@ final class COWMacroCollisionTests: XCTestCase {
             _storage.value = newValue
           }
         }
-        struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
+        struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int = 0
         }
         @COW._Box
-        var _storage: __macro_local_7StoragefMu_ = __macro_local_7StoragefMu_()
+        var _storage: _$COWStorage = _$COWStorage()
       
       }
       """,

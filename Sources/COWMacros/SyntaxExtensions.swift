@@ -153,8 +153,8 @@ extension VariableDeclSyntax {
     hasMacroApplication(COWExcludedMacro.name)
   }
   
-  internal var isIncludeable: Bool {
-    return !isExcluded
+  internal var isNotExcludedAndStored: Bool {
+    return !isExcluded && bindings.allSatisfy(\.isStored)
   }
   
   internal var hasSingleBinding: Bool {

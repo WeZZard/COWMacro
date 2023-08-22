@@ -27,13 +27,35 @@ final class COWMacroUserStorageTests: XCTestCase {
         var value: Int
         
         init(value: Int) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = Storage(value: value)
           self.value = value
         }
       }
       """, 
       expandedSource:
       """
+      struct WithStorageType {
+        struct Storage {
+            var value : Int
+      
+        }
+      
+        var value: Int {
+            get {
+              return _$storage.value
+            }
+            set {
+              _$storage.value = newValue
+            }
+        }
+      
+        init(value: Int) {
+          self._$storage = Storage(value: value)
+          self.value = value
+        }
+        @COW._Box
+        var _$storage: Storage
+      }
       """,
       macros: testedMacros
     )

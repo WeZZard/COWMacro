@@ -80,28 +80,61 @@ public struct COWMacro:
       attributedBy: node
     )
     
-    let (initVarDecls, typeAnnoatedVarDecls) =
-      try classifyIncludeableVarDecls(in: structDecl)
+    let (
+      appliedStructInitializedVarDecls,
+      appliedStructTypeAnnotatedVarDecls
+    ) = try classifyIncludeableVarDecls(in: structDecl)
     
-    // Create storage type
-    guard let (storageTypeDecl, isUserDefinedStorage) =
-            try createOrUseExistedStorageTypeDecl(
-              for: structDecl,
-              initVarDecls: initVarDecls,
-              typeAnnoatedVarDecls: typeAnnoatedVarDecls,
-              in: context
-            ) else {
-      return []
+    let userStorageTypeDecls = collectUserDefinedStorageTypeDecls(
+      in: declaration
+    )
+    
+    guard userStorageTypeDecls.count <= 1 else {
+        let firstInvalidStorageTypeDecl = userStorageTypeDecls[1]
+        throw DiagnosticsError(
+          syntax: firstInvalidStorageTypeDecl,
+          message:
+            """
+            Only one subtyped struct can be marked with @COWStorage in a \
+            @COW marked struct.
+            """,
+          id: .duplicateCOWStorages
+        )
     }
     
-    let storageName = structDecl.copyOnWriteStorageName
-    ?? defaultStorageName
+    let userStorageTypeDecl = userStorageTypeDecls.first
+    
+    // Create or use user-defined storage type
+    let storageTypeDecl: StructDeclSyntax
+    let isUserDefinedStorage: Bool
+    let userStorageTypeAnnotatedVarDecls: [VariableDeclSyntax]
+    
+    if let userStorageTypeDecl = userStorageTypeDecl {
+      storageTypeDecl = userStorageTypeDecl
+      (_, userStorageTypeAnnotatedVarDecls) =
+        try classifyIncludeableVarDecls(in: userStorageTypeDecl)
+      isUserDefinedStorage = true
+    } else {
+      let varDecls = appliedStructInitializedVarDecls + appliedStructTypeAnnotatedVarDecls
+      if varDecls.isEmpty {
+        return []
+      }
+      storageTypeDecl = self.createStorageTypeDecl(
+        for: declaration,
+        with: varDecls,
+        in: context
+      )
+      userStorageTypeAnnotatedVarDecls = []
+      isUserDefinedStorage = false
+    }
+    
+    let storageName = structDecl.copyOnWriteStorageName ?? defaultStorageName
     
     // Create storage member
     let storageMemberDecl = createStorageMemberDecl(
       memberName: storageName,
       typeName: storageTypeDecl.typeName,
-      hasInitializer: typeAnnoatedVarDecls.isEmpty
+      hasDefaultInitializer: appliedStructTypeAnnotatedVarDecls.isEmpty && userStorageTypeAnnotatedVarDecls.isEmpty
     )
     
     // Create explicit initializer if needed
@@ -111,7 +144,8 @@ public struct COWMacro:
       storageTypeDecl: storageTypeDecl,
       isUserDefinedStorage: isUserDefinedStorage,
       storageName: storageName,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls
+      appliedStructVarDecls: appliedStructTypeAnnotatedVarDecls,
+      userStorageStructVarDecls: userStorageTypeAnnotatedVarDecls
     )
     
     var expansions = [DeclSyntax]()
@@ -147,7 +181,7 @@ public struct COWMacro:
     if let varDecl = member.as(VariableDeclSyntax.self) {
       // Marks non-`@COWExcluded` stored properties with `@COWIncldued`
       
-      guard varDecl.isIncludeable else {
+      guard varDecl.isNotExcludedAndStored else {
         return []
       }
       
@@ -285,7 +319,7 @@ extension COWMacro {
     return declaration.memberBlock.members.compactMap {
       eachItem -> VariableDeclSyntax? in
       guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
-            varDecl.isIncludeable else {
+            varDecl.isNotExcludedAndStored else {
         return nil
       }
       return varDecl.trimmed
@@ -314,22 +348,20 @@ extension COWMacro {
   ) {
     let collectedVarDecls = collectIncludeableVarDecls(on: declaration)
     
-    let validVarDecls = collectedVarDecls
-      .filter(\.hasSingleBinding)
-    let validWithInitializer = validVarDecls
+    let validVarDecls = collectedVarDecls.filter(\.hasSingleBinding)
+    let hasInitializer = validVarDecls
       .filter(\.bindings.first!.hasInitializer)
-    let validWithTypeAnnoation = validVarDecls
+    let hasTypeAnnoation = validVarDecls
       .filter(\.bindings.first!.hasNoInitializer)
-    let invalidVarDecls = collectedVarDecls
-      .filter(\.hasMultipleBindings)
+    let invalid = collectedVarDecls.filter(\.hasMultipleBindings)
     
-    if !invalidVarDecls.isEmpty {
-      let oldMembers = declaration.memberBlock.members
+    if !invalid.isEmpty {
+      let illMembers = declaration.memberBlock.members
       
-      var newMembers = declaration.memberBlock.members
+      var fixedMembers = declaration.memberBlock.members
       
-      for eachInvalid in invalidVarDecls {
-        for (index, eachMember) in newMembers.enumerated().reversed() {
+      for eachInvalid in invalid {
+        for (index, eachMember) in fixedMembers.enumerated().reversed() {
           guard let varDecl = eachMember.decl.as(VariableDeclSyntax.self) else {
             continue
           }
@@ -341,9 +373,9 @@ extension COWMacro {
                 .with(\.bindings, PatternBindingListSyntax([fixedBinding]))
                 .with(\.leadingTrivia, .newline)
             }
-            newMembers = newMembers.removing(childAt: index)
+            fixedMembers = fixedMembers.removing(childAt: index)
             for eachReplaced in allReplaced.reversed() {
-              newMembers = newMembers.inserting(
+              fixedMembers = fixedMembers.inserting(
                 MemberDeclListItemSyntax(decl: eachReplaced), at: index
               )
             }
@@ -352,7 +384,7 @@ extension COWMacro {
       }
       
       throw DiagnosticsError.init(
-        syntax: oldMembers,
+        syntax: illMembers,
         message:
           """
           Decalring multiple stored properties over one variable declaration \
@@ -364,59 +396,14 @@ extension COWMacro {
           seperate decalrations.
           """,
         changes: [
-          .replace(oldNode: Syntax(oldMembers), newNode: Syntax(newMembers))
+          .replace(oldNode: Syntax(illMembers), newNode: Syntax(fixedMembers))
         ],
         id: .undefinedBehavior,
         severity: .error
       )
     }
     
-    return (
-      validWithInitializer,
-      validWithTypeAnnoation
-    )
-  }
-  
-  internal static func createOrUseExistedStorageTypeDecl<
-    Declaration: DeclGroupSyntax,
-    Context: MacroExpansionContext
-  >(
-    for declaration: Declaration,
-    initVarDecls: [VariableDeclSyntax],
-    typeAnnoatedVarDecls: [VariableDeclSyntax],
-    in context: Context
-  ) throws -> (decl: StructDeclSyntax, isUserDefined: Bool)? {
-    let decl: StructDeclSyntax
-    let isUserDefined: Bool
-    
-    let userDefinedDecls = collectUserDefinedStorageTypeDecls(in: declaration)
-    
-    if userDefinedDecls.isEmpty {
-      if initVarDecls.isEmpty && typeAnnoatedVarDecls.isEmpty {
-        return nil
-      }
-      decl = self.createStorageTypeDecl(
-        for: declaration,
-        with: initVarDecls + typeAnnoatedVarDecls,
-        in: context
-      )
-      isUserDefined = false
-    } else if userDefinedDecls.count == 1 {
-      decl = userDefinedDecls[0]
-      isUserDefined = true
-    } else {
-      let secondUserStorageTypeDecl = userDefinedDecls[1]
-      throw DiagnosticsError(
-        syntax: secondUserStorageTypeDecl,
-        message:
-          """
-          Only one subtyped struct can be marked with @COWStorage in a \
-          @COW marked struct.
-          """,
-        id: .duplicateCOWStorages
-      )
-    }
-    return (decl, isUserDefined)
+    return (hasInitializer, hasTypeAnnoation)
   }
   
   internal static let autoSynthesizingProtocolTypes: Set<String> = [
@@ -488,9 +475,9 @@ extension COWMacro {
   internal static func createStorageMemberDecl(
     memberName: TokenSyntax,
     typeName: TokenSyntax,
-    hasInitializer: Bool
+    hasDefaultInitializer: Bool
   ) -> DeclSyntax {
-    if hasInitializer {
+    if hasDefaultInitializer {
       return
         """
         @\(raw: COWExcludedMacro.name)
@@ -507,11 +494,19 @@ extension COWMacro {
     }
   }
   
+  internal struct StorageInitParameters {
+    
+    internal let appliedStructVarDecls: [VariableDeclSyntax]
+    
+    internal let userStorageStructVarDecls: [VariableDeclSyntax]
+    
+  }
+  
   internal static func collectStorageInitParameters(
     node: AttributeSyntax,
     storageTypeDecl: StructDeclSyntax,
-    isUserDefinedStorage: Bool,
-    typeAnnoatedVarDecls: [VariableDeclSyntax]
+    appliedStructVarDecls: [VariableDeclSyntax],
+    userStorageStructVarDecls: [VariableDeclSyntax]?
   ) throws -> [FunctionParameterSyntax] {
     let storageExplicitInitDecls = collectExplicitInitializers(
       on: storageTypeDecl
@@ -522,18 +517,10 @@ extension COWMacro {
     if storageExplicitInitDecls.isEmpty {
       var allVars: [VariableDeclSyntax] = []
       
-      if isUserDefinedStorage {
-        let existedVars = storageTypeDecl.memberBlock.members.compactMap {
-          eachMember -> VariableDeclSyntax? in
-          guard let eachVar = eachMember.decl.as(VariableDeclSyntax.self) else {
-            return nil
-          }
-          return eachVar
-        }
-        allVars.append(contentsOf: existedVars)
+      allVars.append(contentsOf: appliedStructVarDecls)
+      if let userStorageStructVarDecls {
+        allVars.append(contentsOf: userStorageStructVarDecls)
       }
-      
-      allVars.append(contentsOf: typeAnnoatedVarDecls)
       
       parameters = allVars.compactMap {
         varDecl -> FunctionParameterSyntax? in
@@ -559,7 +546,6 @@ extension COWMacro {
         }
       }
     } else if storageExplicitInitDecls.count == 1 {
-      // TODO: What about multiple explicit initializers on user defined storage?
       let funcSig = storageExplicitInitDecls[0].signature
       parameters = funcSig.input.parameterList.map({$0})
     } else {
@@ -567,10 +553,8 @@ extension COWMacro {
         syntax: node,
         message:
           """
-          @COW macro cannot create the static make storage method on \
-          behalf of you since there are multiple explicit initializers are \
-          defined in the copy-on-write storage type declaration \
-          \(storageTypeDecl.identifier.trimmed.text)
+          Declaring multiple initializers on @COWStorage applied struct is an \
+          undefined behavior.
           """,
         id: .undefinedBehavior)
     }
@@ -625,10 +609,12 @@ extension COWMacro {
     storageTypeDecl: StructDeclSyntax,
     isUserDefinedStorage: Bool,
     storageName: TokenSyntax,
-    typeAnnoatedVarDecls: [VariableDeclSyntax]
+    appliedStructVarDecls: [VariableDeclSyntax],
+    userStorageStructVarDecls: [VariableDeclSyntax]?
   ) throws -> InitializerDeclSyntax? {
     
-    guard !typeAnnoatedVarDecls.isEmpty else {
+    guard !appliedStructVarDecls.isEmpty
+            || userStorageStructVarDecls?.isEmpty == false else {
       return nil
     }
     
@@ -637,8 +623,8 @@ extension COWMacro {
     let parameters = try collectStorageInitParameters(
       node: node,
       storageTypeDecl: storageTypeDecl,
-      isUserDefinedStorage: isUserDefinedStorage,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls
+      appliedStructVarDecls: appliedStructVarDecls,
+      userStorageStructVarDecls: userStorageStructVarDecls
     )
     
     guard explicitInitializers.isEmpty else {
@@ -822,7 +808,7 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
     in context: Context
   ) throws -> [AccessorDeclSyntax] {
     guard let varDecl = declaration.as(VariableDeclSyntax.self),
-          varDecl.isIncludeable,
+          varDecl.isNotExcludedAndStored,
           let identifier = varDecl.identifier else {
       return []
     }

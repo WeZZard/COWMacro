@@ -41,7 +41,7 @@ final class COWMacroCustomStorageTests: XCTestCase {
         
         var value: String {
           get {
-            _$storage.value
+            return _$storage.value
           }
           set {
             _$storage.value = newValue
@@ -61,7 +61,7 @@ final class COWMacroCustomStorageTests: XCTestCase {
       
         }
       
-        var value: String  {
+        var value: String {
           get {
             return _$storage.value
           }
@@ -71,11 +71,8 @@ final class COWMacroCustomStorageTests: XCTestCase {
         }
         @COW._Box
         var _$storage: Bar
-        static func _$makeStorage(value: String ) -> Bar {
-          return Bar(value: value)
-        }
-        init(value: String ) {
-          self._$storage = Self._$makeStorage(value: value)
+        init(value: String) {
+          self._$storage = Bar(value: value)
         }
       
       }

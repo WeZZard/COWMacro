@@ -102,7 +102,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
           var value: Int
         
           init(value: Int) {
-            self._$storage = Self._$makeStorage(value: value)
+            self._$storage = _$COWStorage(value: value)
             self.value = value
           }
         }
@@ -122,17 +122,14 @@ final class COWMacroExplicitInitTests: XCTestCase {
           }
         
           init(value: Int) {
-            self._$storage = Self._$makeStorage(value: value)
+            self._$storage = _$COWStorage(value: value)
             self.value = value
           }
-          struct __macro_local_7StoragefMu_: COW.CopyOnWriteStorage {
+          struct _$COWStorage: COW.CopyOnWriteStorage {
             var value: Int
           }
           @COW._Box
-          var _$storage: __macro_local_7StoragefMu_
-          static func _$makeStorage(value: Int) -> __macro_local_7StoragefMu_ {
-            return __macro_local_7StoragefMu_(value: value)
-          }
+          var _$storage: _$COWStorage
         }
         """,
         macros: testedMacros,
@@ -219,7 +216,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
       
         }
       
-        var value: Int  {
+        var value: Int {
           get {
             return _$storage.value
           }
@@ -275,7 +272,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
         }
       
         init(value: Int) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = Bar(value: value)
           self.value = value
         }
       }
@@ -295,7 +292,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
       
         }
       
-        var value: Int  {
+        var value: Int {
           get {
             return _$storage.value
           }
@@ -305,14 +302,11 @@ final class COWMacroExplicitInitTests: XCTestCase {
         }
       
         init(value: Int) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = Bar(value: value)
           self.value = value
         }
         @COW._Box
         var _$storage: Bar
-        static func _$makeStorage(value: Int) -> Bar {
-          return Bar(value: value)
-        }
       }
       """,
       macros: testedMacros,

@@ -56,7 +56,7 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         
         var value: String {
           get {
-            _$storage.value = newValue
+            return _$storage.value
           }
           set {
             _$storage.value = newValue
@@ -77,7 +77,7 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       
         }
       
-        var value: String  {
+        var value: String {
           get {
             return _$storage.value
           }
@@ -87,11 +87,8 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         }
         @COW._Box
         var _$storage: Storage
-        static func _$makeStorage(value: String ) -> Storage {
-          return Storage(value: value)
-        }
-        init(value: String ) {
-          self._$storage = Self._$makeStorage(value: value)
+        init(value: String) {
+          self._$storage = Storage(value: value)
         }
       
       }
@@ -148,7 +145,7 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         }
       
         init(value: Capitalized<String>) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = Storage(value: value)
         }
         
       }
@@ -169,7 +166,7 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       
         }
       
-        var value: String  {
+        var value: String {
           get {
             return _$storage.value
           }
@@ -179,13 +176,10 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         }
       
         init(value: Capitalized<String>) {
-          self._$storage = Self._$makeStorage(value: value)
+          self._$storage = Storage(value: value)
         }
         @COW._Box
         var _$storage: Storage
-        static func _$makeStorage(value: Capitalized<String>) -> Storage {
-          return Storage(value: value)
-        }
       
       }
       """,
