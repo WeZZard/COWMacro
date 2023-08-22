@@ -9,24 +9,73 @@ import SwiftSyntax
 
 internal struct COWStoragePropertyDescriptor {
   
+  enum DeclarePattern {
+    
+    case typeAndInitializer(TypeSyntax, ExprSyntax)
+    
+    case type(TypeSyntax)
+    
+    case initializer(ExprSyntax)
+    
+    init?(type: TypeSyntax?, initializer: ExprSyntax?) {
+      switch (type, initializer) {
+      case (let .some(type), let .some(initializer)):
+        self = .typeAndInitializer(type, initializer)
+      case (let .some(type), .none):
+        self = .type(type)
+      case (.none, let .some(initializer)):
+        self = .initializer(initializer)
+      case (.none, .none):
+        return nil
+      }
+    }
+    
+  }
+  
   internal let keyword: TokenSyntax
   
   internal let name: TokenSyntax
   
-  internal let type: TypeSyntax?
+  internal let declarePattern: DeclarePattern
   
-  internal let initializer: ExprSyntax
+  internal var type: TypeSyntax? {
+    switch declarePattern {
+    case .typeAndInitializer(let typeSyntax, _):
+      return typeSyntax
+    case .type(let typeSyntax):
+      return typeSyntax
+    case .initializer:
+      return nil
+    }
+  }
+  
+  internal var initializer: ExprSyntax? {
+    switch declarePattern {
+    case .typeAndInitializer(_, let exprSyntax):
+      return exprSyntax
+    case .type:
+      return nil
+    case .initializer(let exprSyntax):
+      return exprSyntax
+    }
+  }
   
   internal func makeVarDecl() -> DeclSyntax {
-    if let typeAnnotation = type {
+    switch declarePattern {
+    case .typeAndInitializer(let type, let initializer):
       return
         """
-        \(keyword) \(name) : \(typeAnnotation) = \(initializer)
+        \(keyword) \(name) : \(type) = \(initializer)
         """
-    } else {
+    case .initializer(let initializer):
       return
         """
         \(keyword) \(name) = \(initializer)
+        """
+    case .type(let type):
+      return
+        """
+        \(keyword) \(name) : \(type)
         """
     }
   }
@@ -172,15 +221,17 @@ extension PatternBindingSyntax {
     _ keyword: TokenSyntax
   ) -> COWStoragePropertyDescriptor? {
     guard let identPattern = pattern.as(IdentifierPatternSyntax.self),
-          let initializer = initializer else {
+          let declarePattern = COWStoragePropertyDescriptor.DeclarePattern(
+            type: typeAnnotation?.type,
+            initializer: initializer?.value
+          ) else {
       return nil
     }
     
     return COWStoragePropertyDescriptor(
       keyword: keyword,
       name: identPattern.identifier,
-      type: typeAnnotation?.type,
-      initializer: initializer.value
+      declarePattern: declarePattern
     )
   }
   
@@ -188,58 +239,68 @@ extension PatternBindingSyntax {
 
 extension AttributeSyntax.Argument {
   
-  /// The copy-on-write storage name
-  internal var storageName: TokenSyntax? {
+  internal func getArg(at offset: Int, name: String) -> ExprSyntax? {
     guard case .argumentList(let args) = self else {
       return nil
     }
     
-    guard args.count >= 1 else {
+    guard offset < args.count else {
       return nil
     }
     
-    let arg0 = args[args.startIndex]
+    let arg = args[args.index(args.startIndex, offsetBy: offset)]
     
-    guard case .identifier("storageName") = arg0.label?.tokenKind else {
+    guard case .identifier(name) = arg.label?.tokenKind else {
       return nil
     }
     
-    guard let storageNameArg
-            = arg0.expression.as(StringLiteralExprSyntax.self) else {
+    return arg.expression
+  }
+  
+  internal func getArg(name: String) -> ExprSyntax? {
+    guard case .argumentList(let args) = self else {
+      return nil
+    }
+    
+    let arg = args.first { arg in
+      guard case .identifier(name) = arg.label?.tokenKind else {
+        return false
+      }
+      
+      return true
+    }
+    
+    guard let arg = arg else {
+      return nil
+    }
+    
+    return arg.expression
+  }
+  
+  /// The copy-on-write storage name
+  internal var storageName: TokenSyntax? {
+    guard let arg = getArg(name: "storageName") else {
+      return nil
+    }
+    
+    guard let storageName = arg.as(StringLiteralExprSyntax.self) else {
       return nil
     }
     
     return TokenSyntax(
-      .identifier(storageNameArg.trimmed.segments.description),
+      .identifier(storageName.trimmed.segments.description),
       presence: .present
     )
   }
   
   internal var storagePropertyDescriptor: COWStoragePropertyDescriptor? {
-    guard case .argumentList(let args) = self else {
+    guard let arg0 = getArg(name: "keyword"),
+          let arg1 = getArg(name: "name") else {
       return nil
     }
     
-    guard args.count >= 4 else {
-      return nil
-    }
-    
-    let arg0 = args[args.startIndex]
-    let arg1 = args[args.index(args.startIndex, offsetBy: 1)]
-    let arg2 = args[args.index(args.startIndex, offsetBy: 2)]
-    let arg3 = args[args.index(args.startIndex, offsetBy: 3)]
-    
-    guard case .identifier("keyword") = arg0.label?.tokenKind,
-          case .identifier("name") = arg1.label?.tokenKind,
-          case .identifier("type") = arg2.label?.tokenKind,
-          case .identifier("initialValue") = arg3.label?.tokenKind else {
-      return nil
-    }
-    
-    let keywordArg = arg0.expression.as(MemberAccessExprSyntax.self)
-    let nameArg = arg1.expression.as(StringLiteralExprSyntax.self)
-    let typeArg = arg2.expression.as(StringLiteralExprSyntax.self)
-    let initialValueArg = arg3.expression.as(StringLiteralExprSyntax.self)
+    let keywordArg = arg0.as(MemberAccessExprSyntax.self)
+    let nameArg = arg1.as(StringLiteralExprSyntax.self)
     
     guard let keyword = keywordArg?.name else {
       return nil
@@ -247,16 +308,28 @@ extension AttributeSyntax.Argument {
     guard let name = nameArg?.trimmed.segments.description else {
       return nil
     }
+    
+    let arg2 = getArg(name: "type")
+    let arg3 = getArg(name: "initialValue")
+    
+    let typeArg = arg2?.as(StringLiteralExprSyntax.self)
+    let initialValueArg = arg3?.as(StringLiteralExprSyntax.self)
+    
     let type = typeArg?.trimmed.segments.description
-    guard let initialValue = initialValueArg?.trimmed.segments.description else {
+    
+    guard let declarePattern = COWStoragePropertyDescriptor.DeclarePattern(
+      type: type.map(TypeSyntax.init),
+      initializer: initialValueArg.map {
+        ExprSyntax(stringLiteral: $0.trimmed.segments.description)
+      }
+    ) else {
       return nil
     }
     
     return COWStoragePropertyDescriptor(
       keyword: keyword,
       name: TokenSyntax(.stringSegment(name), presence: .present),
-      type: type.map(TypeSyntax.init),
-      initializer: ExprSyntax(stringLiteral: initialValue)
+      declarePattern: declarePattern
     )
   }
   

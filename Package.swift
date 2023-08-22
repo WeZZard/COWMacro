@@ -49,10 +49,12 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "COWTests",
-            dependencies: [
-                "COW",
-            ]
+            name: "COWIntegratedTests",
+            dependencies: ["COW"]
+        ),
+        .testTarget(
+            name: "COWUnitTests",
+            dependencies: ["COW"]
         ),
     ]
 )

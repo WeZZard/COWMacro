@@ -147,7 +147,7 @@ final class COWMacroOLoCTests: XCTestCase {
   
   /// Does not break the behavior of auto synthesizing protocols.
   ///
-  /// `Hashable`, `Comparable`, `Codeable` shall also work.
+  /// `Hashable`, `Codeable` shall also work.
   ///
   /// The original struct:
   ///

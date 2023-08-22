@@ -1,5 +1,5 @@
 //
-//  _BoxTests.swift
+//  _BoxUnitTests.swift
 //
 //
 //  Created by WeZZard on 7/1/23.
@@ -9,7 +9,7 @@
 
 import COW
 
-final class _BoxTests: XCTestCase {
+final class _BoxUnitTests: XCTestCase {
   
   func test_BoxValueSemanticBehavior() {
     struct Foo {
@@ -132,35 +132,6 @@ final class _BoxTests: XCTestCase {
     var value2: Value = Value(value: 1)
     
     XCTAssertEqual(_value1.hashValue, _value2.hashValue)
-  }
-  
-  func testBoxConformsToComparableWhenTheContentsTypeConformsToComparable() {
-    struct Value: CopyOnWriteStorage, Comparable {
-      
-      var value: Int
-      
-      static func < (lhs: Value, rhs: Value) -> Bool {
-        return lhs.value < rhs.value
-      }
-      
-    }
-    
-    @_Box
-    var value1: Value = Value(value: 1)
-    
-    @_Box
-    var value2: Value = Value(value: 2)
-    
-    @_Box
-    var value3: Value = Value(value: 3)
-    
-    XCTAssertTrue(_value1 < _value2)
-    XCTAssertTrue(_value2 > _value1)
-    
-    XCTAssertTrue(_value1 == _value1)
-    
-    XCTAssertTrue(_value2 < _value3)
-    XCTAssertTrue(_value3 > _value2)
   }
   
   func testBoxConformsToCodableWhenTheContentsTypeConformsToCodable() {

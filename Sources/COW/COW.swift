@@ -46,7 +46,7 @@ public macro COWIncluded(storageName: String) =
 /// - Warning: Use `@COWExcluded` in a `#if ... #else ... #end` config is an
 /// undefined behavior.
 ///
-@attached(accessor, names: named(willSet))
+@attached(peer)
 public macro COWExcluded() =
   #externalMacro(module: "COWMacros", type: "COWExcludedMacro")
 
@@ -139,7 +139,21 @@ public enum COWStoragePropertyKeyword: String {
 public macro COWStorageAddProperty(
   keyword: COWStoragePropertyKeyword,
   name: String,
-  type: String?,
+  type: String,
+  initialValue: String
+) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
+
+@attached(member, names: arbitrary)
+public macro COWStorageAddProperty(
+  keyword: COWStoragePropertyKeyword,
+  name: String,
+  type: String
+) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
+
+@attached(member, names: arbitrary)
+public macro COWStorageAddProperty(
+  keyword: COWStoragePropertyKeyword,
+  name: String,
   initialValue: String
 ) = #externalMacro(module: "COWMacros", type: "COWStorageAddPropertyMacro")
 
@@ -202,15 +216,6 @@ extension _Box: Equatable where Contents: Equatable {
   @inlinable
   public static func == (lhs: Self, rhs: Self) -> Bool {
     return lhs.wrappedValue == rhs.wrappedValue
-  }
-  
-}
-
-extension _Box: Comparable where Contents: Comparable {
-  
-  @inlinable
-  public static func < (lhs: Self, rhs: Self) -> Bool {
-    return lhs.wrappedValue < rhs.wrappedValue
   }
   
 }

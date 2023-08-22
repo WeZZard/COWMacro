@@ -84,12 +84,13 @@ public struct COWMacro:
       try classifyIncludeableVarDecls(in: structDecl)
     
     // Create storage type
-    guard let storageTypeDecl = try createOrUseExistedStorageTypeDecl(
-      for: structDecl,
-      initVarDecls: initVarDecls,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls,
-      in: context
-    ) else {
+    guard let (storageTypeDecl, isUserDefinedStorage) =
+            try createOrUseExistedStorageTypeDecl(
+              for: structDecl,
+              initVarDecls: initVarDecls,
+              typeAnnoatedVarDecls: typeAnnoatedVarDecls,
+              in: context
+            ) else {
       return []
     }
     
@@ -103,21 +104,12 @@ public struct COWMacro:
       hasInitializer: typeAnnoatedVarDecls.isEmpty
     )
     
-    // Create make storage method if needed
-    let makeStorageMethodDecl =
-    try createOrUseExistedMakeStorageMethodDeclIfNeeded(
-      for: structDecl,
-      storageTypeDecl: storageTypeDecl,
-      expandedBy: node,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls
-    )
-    
     // Create explicit initializer if needed
     let explicitInitializerDecl = try createExplicitInitializerDeclIfNeeded(
       for: structDecl,
       expandedBy: node,
-      makeStorageMethodDecl: makeStorageMethodDecl,
       storageTypeDecl: storageTypeDecl,
+      isUserDefinedStorage: isUserDefinedStorage,
       storageName: storageName,
       typeAnnoatedVarDecls: typeAnnoatedVarDecls
     )
@@ -126,9 +118,6 @@ public struct COWMacro:
     
     structDecl.addIfNeeded(storageTypeDecl, to: &expansions)
     structDecl.addIfNeeded(storageMemberDecl, to: &expansions)
-    if let makeStorageMethodDecl {
-      structDecl.addIfNeeded(makeStorageMethodDecl, to: &expansions)
-    }
     if let explicitInitializerDecl {
       structDecl.addIfNeeded(explicitInitializerDecl, to: &expansions)
     }
@@ -193,19 +182,23 @@ public struct COWMacro:
         return []
       }
       
-      return validIncludeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
-        eachVarDecl.storagePropertyDescriptors.map { desc in
-          return
-            """
-            @COWStorageAddProperty(
-              keyword: .\(desc.keyword.trimmed),
-              name: "\(desc.name.trimmed)",
-              type: \(desc.type.map({"\"\($0.trimmed)\""}) ?? "nil"),
-              initialValue: "\(desc.initializer.trimmed)"
-            )
-            """
+      let result = validIncludeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
+        eachVarDecl.storagePropertyDescriptors.map { desc -> AttributeSyntax in
+          AttributeSyntax(TypeSyntax(SimpleTypeIdentifierSyntax(name: .identifier(COWStorageAddPropertyMacro.name)))) {
+            TupleExprElementSyntax(label: "keyword", expression: MemberAccessExprSyntax(name: desc.keyword.trimmed))
+            TupleExprElementSyntax(label: "name", expression: StringLiteralExprSyntax(content: desc.name.text))
+            if let type = desc.type {
+              TupleExprElementSyntax(label: "type", expression: StringLiteralExprSyntax(content: type.trimmedDescription))
+            }
+            if let initializer = desc.initializer {
+              TupleExprElementSyntax(label: "initialValue", expression: StringLiteralExprSyntax(content: initializer.trimmedDescription))
+            }
+          }
         }
       }.flatMap({$0})
+      
+      
+      return result
     }
     
     return []
@@ -392,12 +385,11 @@ extension COWMacro {
     initVarDecls: [VariableDeclSyntax],
     typeAnnoatedVarDecls: [VariableDeclSyntax],
     in context: Context
-  ) throws -> StructDeclSyntax? {
+  ) throws -> (decl: StructDeclSyntax, isUserDefined: Bool)? {
     let decl: StructDeclSyntax
+    let isUserDefined: Bool
     
-    let userDefinedDecls = collectUserDefinedStorageTypeDecls(
-      in: declaration
-    )
+    let userDefinedDecls = collectUserDefinedStorageTypeDecls(in: declaration)
     
     if userDefinedDecls.isEmpty {
       if initVarDecls.isEmpty && typeAnnoatedVarDecls.isEmpty {
@@ -408,8 +400,10 @@ extension COWMacro {
         with: initVarDecls + typeAnnoatedVarDecls,
         in: context
       )
+      isUserDefined = false
     } else if userDefinedDecls.count == 1 {
       decl = userDefinedDecls[0]
+      isUserDefined = true
     } else {
       let secondUserStorageTypeDecl = userDefinedDecls[1]
       throw DiagnosticsError(
@@ -422,7 +416,7 @@ extension COWMacro {
         id: .duplicateCOWStorages
       )
     }
-    return decl
+    return (decl, isUserDefined)
   }
   
   internal static let autoSynthesizingProtocolTypes: Set<String> = [
@@ -430,8 +424,6 @@ extension COWMacro {
     "Swift.Equatable",
     "Hashable",
     "Swift.Hashable",
-    "Comparable",
-    "Swift.Comparable",
     "Codable",
     "Swift.Codable",
     "Encodable",
@@ -479,12 +471,12 @@ extension COWMacro {
       InheritedTypeListSyntax {
         InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)
       }
-      // Equatable, Comparable, Hashable, Codeable
+      // Equatable, Hashable, Codeable
       InheritedTypeListSyntax(
         collectAutoSynthesizingProtocolConformance(on: declaration)
       )
     }
-    let typeName = context.makeUniqueName("Storage")
+    let typeName: TokenSyntax = "_$COWStorage"
     return StructDeclSyntax(
       identifier: typeName,
       inheritanceClause: inheritance
@@ -515,41 +507,10 @@ extension COWMacro {
     }
   }
   
-  internal static func collecteUserDefinedStaticMakeStorageMethodDecls<
-    Declaration: DeclGroupSyntax
-  >(in declaration: Declaration) -> [FunctionDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { eachItem in
-      guard let funcDecl = eachItem.decl.as(FunctionDeclSyntax.self),
-            funcDecl.hasMacroApplication(COWMakeStorageMacro.name),
-            funcDecl.isStatic else {
-        return nil
-      }
-      
-      return funcDecl
-    }
-  }
-  
-  internal static func diagnoseUnnecessaryUserDefinedMakeStorageMethod(
-    storageTypeDecl: StructDeclSyntax,
-    userDefinedMethodDecls: [FunctionDeclSyntax]
-  ) throws {
-    for eachMethodDecl in userDefinedMethodDecls {
-      throw DiagnosticsError(
-        syntax: eachMethodDecl,
-        message:
-          """
-          @COW does not use this static make storage method because the \
-          copy-on-write storage could be initialized without arguments.
-          """,
-        id: .undefinedBehavior,
-        severity: .note
-      )
-    }
-  }
-  
-  internal static func collectMakeStorageMethodParameters(
+  internal static func collectStorageInitParameters(
     node: AttributeSyntax,
     storageTypeDecl: StructDeclSyntax,
+    isUserDefinedStorage: Bool,
     typeAnnoatedVarDecls: [VariableDeclSyntax]
   ) throws -> [FunctionParameterSyntax] {
     let storageExplicitInitDecls = collectExplicitInitializers(
@@ -559,7 +520,22 @@ extension COWMacro {
     let parameters: [FunctionParameterSyntax]
     
     if storageExplicitInitDecls.isEmpty {
-      parameters = typeAnnoatedVarDecls.compactMap {
+      var allVars: [VariableDeclSyntax] = []
+      
+      if isUserDefinedStorage {
+        let existedVars = storageTypeDecl.memberBlock.members.compactMap {
+          eachMember -> VariableDeclSyntax? in
+          guard let eachVar = eachMember.decl.as(VariableDeclSyntax.self) else {
+            return nil
+          }
+          return eachVar
+        }
+        allVars.append(contentsOf: existedVars)
+      }
+      
+      allVars.append(contentsOf: typeAnnoatedVarDecls)
+      
+      parameters = allVars.compactMap {
         varDecl -> FunctionParameterSyntax? in
         
         guard let ident = varDecl.identifier else {
@@ -583,6 +559,7 @@ extension COWMacro {
         }
       }
     } else if storageExplicitInitDecls.count == 1 {
+      // TODO: What about multiple explicit initializers on user defined storage?
       let funcSig = storageExplicitInitDecls[0].signature
       parameters = funcSig.input.parameterList.map({$0})
     } else {
@@ -598,73 +575,22 @@ extension COWMacro {
         id: .undefinedBehavior)
     }
     
-    return parameters
-  }
-  
-  internal static func createOrUseExistedMakeStorageMethodDeclIfNeeded<
-    Declaration: DeclGroupSyntax
-  >(
-    for declaration: Declaration,
-    storageTypeDecl: StructDeclSyntax,
-    expandedBy node: AttributeSyntax,
-    typeAnnoatedVarDecls: [VariableDeclSyntax]
-  ) throws -> FunctionDeclSyntax? {
-    
-    let userDefinedMethodDecls =
-      collecteUserDefinedStaticMakeStorageMethodDecls(in: storageTypeDecl)
-    
-    guard !typeAnnoatedVarDecls.isEmpty else {
-      try diagnoseUnnecessaryUserDefinedMakeStorageMethod(
-        storageTypeDecl: storageTypeDecl,
-        userDefinedMethodDecls: userDefinedMethodDecls
-      )
-      return nil
-    }
-    
-    guard userDefinedMethodDecls.isEmpty else {
-      if userDefinedMethodDecls.count == 1 {
-        return userDefinedMethodDecls[0]
-      } else {
-        throw DiagnosticsError(
-          syntax: userDefinedMethodDecls[1],
-          message:
-            """
-            @COW finds that there are multiple static make storage methods \
-            defined. Only one definition is allowed.
-            """,
-          id: .undefinedBehavior
-        )
+    if parameters.count > 1 {
+      var commaSeparatedParameters = [FunctionParameterSyntax]()
+      for (index, eachParameter) in parameters.enumerated() {
+        if (index + 1) < parameters.count {
+          commaSeparatedParameters.append(
+            eachParameter
+              .with(\.trailingComma, .commaToken(trailingTrivia: .space))
+          )
+        } else {
+          commaSeparatedParameters.append(eachParameter)
+        }
       }
+      return commaSeparatedParameters
     }
     
-    let parameters = try collectMakeStorageMethodParameters(
-      node: node,
-      storageTypeDecl: storageTypeDecl,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls
-    )
-    
-    // - Infer from type annotated variables / foward to the implicit
-    //    initializer
-    // - Forward to the unique explicit initializer
-    // - Diagnose multiple explicit initializers were found on copy-on-write
-    //    storage
-    
-    let storageTypeName = storageTypeDecl.typeName
-    
-    let parametersSynax = FunctionParameterListSyntax(parameters)
-    
-    let funcDecl = try FunctionDeclSyntax(
-      """
-      static func _$makeStorage(\(parametersSynax)) -> \(storageTypeName)
-      """
-    ) {
-      createMakeStorageStmt(
-        storageTypeName: storageTypeName,
-        parameters: parameters
-      )
-    }
-    
-    return funcDecl
+    return parameters
   }
   
   internal static func collectExplicitInitializers<
@@ -678,13 +604,15 @@ extension COWMacro {
   internal static func checkExplicitInitializers(
     _ initializers: [InitializerDeclSyntax],
     storageName: TokenSyntax,
-    makeStorageMethodDecl: FunctionDeclSyntax
+    storageTypeName: TokenSyntax,
+    parameters: [FunctionParameterSyntax]
   ) throws {
     for eachInit in initializers {
-      try checkInitializerRequireExplicitInvocationOfMakeStorage(
-        eachInit,
+      try checkStorageIsInitialized(
+        in: eachInit,
         storageName: storageName,
-        makeStorageMethodDecl: makeStorageMethodDecl
+        storageTypeName: storageTypeName,
+        parameters: parameters
       )
     }
   }
@@ -694,14 +622,11 @@ extension COWMacro {
   >(
     for declaration: Declaration,
     expandedBy node: AttributeSyntax,
-    makeStorageMethodDecl: FunctionDeclSyntax?,
     storageTypeDecl: StructDeclSyntax,
+    isUserDefinedStorage: Bool,
     storageName: TokenSyntax,
     typeAnnoatedVarDecls: [VariableDeclSyntax]
   ) throws -> InitializerDeclSyntax? {
-    guard let makeStorageMethodDecl else {
-      return nil
-    }
     
     guard !typeAnnoatedVarDecls.isEmpty else {
       return nil
@@ -709,29 +634,29 @@ extension COWMacro {
     
     let explicitInitializers = collectExplicitInitializers(on: declaration)
     
+    let parameters = try collectStorageInitParameters(
+      node: node,
+      storageTypeDecl: storageTypeDecl,
+      isUserDefinedStorage: isUserDefinedStorage,
+      typeAnnoatedVarDecls: typeAnnoatedVarDecls
+    )
+    
     guard explicitInitializers.isEmpty else {
       try checkExplicitInitializers(
         explicitInitializers,
         storageName: storageName,
-        makeStorageMethodDecl: makeStorageMethodDecl
+        storageTypeName: storageTypeDecl.identifier,
+        parameters: parameters
       )
       return nil
     }
-    
-    let parameters = try collectMakeStorageMethodParameters(
-      node: node,
-      storageTypeDecl: storageTypeDecl,
-      typeAnnoatedVarDecls: typeAnnoatedVarDecls
-    )
-    
-    let makeStorageName = makeStorageMethodDecl.identifier.trimmed
     
     let parametersSynax = FunctionParameterListSyntax(parameters)
     
     let initDecl = try InitializerDeclSyntax("init(\(parametersSynax))") {
       createInitStorageExpr(
         storageName: storageName,
-        makeStorageName: makeStorageName,
+        storageTypeName: storageTypeDecl.identifier,
         parameters: parameters,
         usesTemplateArguments: false
       )
@@ -740,31 +665,9 @@ extension COWMacro {
     return initDecl
   }
   
-  internal static func createMakeStorageStmt(
-    storageTypeName: TokenSyntax,
-    parameters: [FunctionParameterSyntax]
-  ) -> ReturnStmtSyntax {
-    // SwiftParser diagnoses errors for editor placeholders generated by
-    // `createArgListSyntax` and cannot supress. We build the following syntax
-    // with syntax builder here.
-    // return $storageTypeName(...parameters)
-    return ReturnStmtSyntax(
-      expression: FunctionCallExprSyntax(
-        calledExpression: IdentifierExprSyntax(identifier: storageTypeName)
-      ) {
-        createArgListSyntax(
-          parameters: parameters,
-          usesTemplateArguments: false
-        )
-      }
-      .with(\.leftParen, .leftParenToken())
-      .with(\.rightParen, .rightParenToken())
-    )
-  }
-  
   internal static func createInitStorageExpr(
     storageName: TokenSyntax,
-    makeStorageName: TokenSyntax,
+    storageTypeName: TokenSyntax,
     parameters: [FunctionParameterSyntax],
     usesTemplateArguments: Bool
   ) -> SequenceExprSyntax {
@@ -778,12 +681,12 @@ extension COWMacro {
         dot: .periodToken() ,
         name: storageName
       )
+      .with(\.trailingTrivia, .space)
       AssignmentExprSyntax()
+      .with(\.trailingTrivia, .space)
       FunctionCallExprSyntax(
-        calledExpression: MemberAccessExprSyntax(
-          base: IdentifierExprSyntax(identifier: .keyword(.Self)),
-          dot: .periodToken(),
-          name: makeStorageName
+        calledExpression: IdentifierExprSyntax(
+          identifier: storageTypeName.trimmed
         )
       ) {
         createArgListSyntax(
@@ -800,7 +703,10 @@ extension COWMacro {
     parameters: [FunctionParameterSyntax],
     usesTemplateArguments: Bool
   ) -> TupleExprElementListSyntax {
-    let args = parameters.map { eachParam -> TupleExprElementSyntax in
+    let parameterCount = parameters.count
+    let args = parameters.enumerated().map {
+      (index, eachParam) -> TupleExprElementSyntax in
+      
       let label = eachParam.firstName
       let name = eachParam.secondName ?? eachParam.firstName
       let nameToken: TokenSyntax
@@ -812,17 +718,23 @@ extension COWMacro {
       var syntax = TupleExprElementSyntax(
         label: label.trimmed.text,
         expression: IdentifierExprSyntax(identifier: nameToken)
-      )
-      syntax.colon?.trailingTrivia = .spaces(1)
+      ).with(\.colon, .colonToken(trailingTrivia: .spaces(1)))
+      
+      if parameterCount > 0 && (index + 1) < parameterCount {
+        syntax = syntax
+          .with(\.trailingComma, .commaToken(trailingTrivia: .spaces(1)))
+      }
+      
       return syntax
     }
     return TupleExprElementListSyntax(args)
   }
   
-  internal static func checkInitializerRequireExplicitInvocationOfMakeStorage(
-    _ initializer: InitializerDeclSyntax,
+  internal static func checkStorageIsInitialized(
+    in initializer: InitializerDeclSyntax,
     storageName: TokenSyntax,
-    makeStorageMethodDecl: FunctionDeclSyntax
+    storageTypeName: TokenSyntax,
+    parameters: [FunctionParameterSyntax]
   ) throws {
     guard let body = initializer.body else {
       return
@@ -840,11 +752,9 @@ extension COWMacro {
       
       let i1 = seqExpr.elements.startIndex
       let i2 = seqExpr.elements.index(i1, offsetBy: 1)
-      let i3 = seqExpr.elements.index(i1, offsetBy: 2)
       
       let expr1 = seqExpr.elements[i1]
       let expr2 = seqExpr.elements[i2]
-      let expr3 = seqExpr.elements[i3]
       
       guard let storage = expr1.as(MemberAccessExprSyntax.self) else {
         continue
@@ -859,35 +769,12 @@ extension COWMacro {
       guard let _ = expr2.as(AssignmentExprSyntax.self) else {
         continue
       }
-      guard let makeStorageCall = expr3.as(FunctionCallExprSyntax.self) else {
-        continue
-      }
-      guard let makeStorage = makeStorageCall
-        .calledExpression
-        .as(MemberAccessExprSyntax.self) else {
-        continue
-      }
-      let makeStorageBase = makeStorage.base?.as(IdentifierExprSyntax.self)?
-        .identifier
-      guard makeStorageBase?.tokenKind == .keyword(.Self) else {
-        continue
-      }
-      guard makeStorage.name.tokenKind ==
-              makeStorageMethodDecl.identifier.tokenKind else {
-        continue
-      }
       return
     }
     
-    let makeStorageName = makeStorageMethodDecl.identifier
-    let parameters = makeStorageMethodDecl
-      .signature
-      .input
-      .parameterList.map({$0})
-    
     let initStorage = createInitStorageExpr(
         storageName: storageName,
-        makeStorageName: makeStorageName,
+        storageTypeName: storageTypeName,
         parameters: parameters,
         usesTemplateArguments: true
       )
@@ -976,7 +863,7 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
 
 // MARK: - @COWExcluded
 
-public struct COWExcludedMacro: AccessorMacro, NameLookupable {
+public struct COWExcludedMacro: PeerMacro, NameLookupable {
   
   // MARK: - NameLookupable
   
@@ -984,17 +871,16 @@ public struct COWExcludedMacro: AccessorMacro, NameLookupable {
     "COWExcluded"
   }
   
-  // MARK: - AccessorMacro
+  // MARK: - PeerMacro
   
   public static func expansion<
-    Context: MacroExpansionContext,
-    Declaration: DeclSyntaxProtocol
+    Declaration: DeclSyntaxProtocol,
+    Context: MacroExpansionContext
   >(
     of node: AttributeSyntax,
-    providingAccessorsOf declaration: Declaration,
+    providingPeersOf declaration: Declaration,
     in context: Context
-  ) throws -> [AccessorDeclSyntax] {
-    // A marker only macro
+  ) throws -> [DeclSyntax] {
     return []
   }
   
