@@ -161,6 +161,13 @@ extension VariableDeclSyntax {
     return bindings.count == 1
   }
   
+  internal var singleBinding: PatternBindingSyntax? {
+    if bindings.count == 1 {
+      return bindings.first
+    }
+    return nil
+  }
+  
   internal var hasMultipleBindings: Bool {
     return bindings.count > 1
   }
@@ -357,7 +364,103 @@ extension InitializerDeclSyntax {
   
 }
 
+private let autoSynthesizingProtocolTypes: Set<String> = [
+  "Equatable",
+  "Swift.Equatable",
+  "Hashable",
+  "Swift.Hashable",
+  "Codable",
+  "Swift.Codable",
+  "Encodable",
+  "Swift.Encodable",
+  "Decodable",
+  "Swift.Decodable",
+]
+
 extension DeclGroupSyntax {
+  
+  internal func collectAutoSynthesizingProtocolConformance() 
+    -> [InheritedTypeSyntax]
+  {
+    guard let structDecl = self.as(StructDeclSyntax.self) else {
+      return []
+    }
+    
+    guard let inheritedTypes
+            = structDecl.inheritanceClause?.inheritedTypeCollection else {
+      return []
+    }
+    
+    return inheritedTypes.filter { each in
+      if let ident = each.typeName.identifier {
+        if autoSynthesizingProtocolTypes.contains(ident) {
+          return true
+        }
+      }
+      return false
+    }
+  }
+  
+  internal func collectExplicitInitializerDecls() -> [InitializerDeclSyntax] {
+    return memberBlock.members.compactMap { eachItem in
+      eachItem.decl.as(InitializerDeclSyntax.self)
+    }
+  }
+  
+  internal func collectUserDefinedStorageTypeDecls() -> [StructDeclSyntax] {
+    return memberBlock.members.compactMap { eachItem in
+      guard let structDecl = eachItem.decl.as(StructDeclSyntax.self),
+            structDecl.hasMacroApplication(COWStorageMacro.name) else {
+        return nil
+      }
+      return structDecl
+    }
+  }
+  
+  internal func collectAdoptableVarDecls() -> [VariableDeclSyntax] {
+    return memberBlock.members.compactMap {
+      eachItem -> VariableDeclSyntax? in
+      guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
+            varDecl.isNotExcludedAndStored else {
+        return nil
+      }
+      return varDecl.trimmed
+    }
+  }
+  
+  internal func collectStoredVarDecls() -> [VariableDeclSyntax] {
+    return memberBlock.members.compactMap { eachItem in
+      guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
+            varDecl.bindings.allSatisfy(\.isStored) else {
+        return nil
+      }
+      return varDecl.trimmed
+    }
+  }
+  
+  internal var classifiedAdoptableVarDecls: (
+    validWithInitializer: [VariableDeclSyntax],
+    validWithTypeAnnoation: [VariableDeclSyntax],
+    invalid: [VariableDeclSyntax]
+  ) {
+    let adoptableVarDecls = collectAdoptableVarDecls()
+    
+    let validVarDeclsAndBindings = adoptableVarDecls.map { varDecl in
+      if let singleBinding = varDecl.singleBinding {
+        return (varDecl: varDecl, singleBinding: singleBinding)
+      } else {
+        return nil
+      }
+    }.compactMap({$0})
+    
+    let hasInitializer = validVarDeclsAndBindings
+      .filter(\.singleBinding.hasInitializer).map(\.varDecl)
+    let hasTypeAnnoation = validVarDeclsAndBindings
+      .filter(\.singleBinding.hasNoInitializer).map(\.varDecl)
+    let invalid = adoptableVarDecls.filter(\.hasMultipleBindings)
+    
+    return (hasInitializer, hasTypeAnnoation, invalid)
+  }
   
   internal func hasMemberStruct(equivalentTo other: StructDeclSyntax) -> Bool {
     for member in memberBlock.members {
@@ -390,6 +493,41 @@ extension DeclGroupSyntax {
     to declarations: inout [DeclSyntax]
   ) {
     addIfNeeded(DeclSyntax(decl), to: &declarations)
+  }
+  
+}
+
+extension TupleExprElementListSyntax {
+  
+  internal static func makeArgList(
+    parameters: [FunctionParameterSyntax],
+    usesTemplateArguments: Bool
+  ) -> TupleExprElementListSyntax {
+    let parameterCount = parameters.count
+    let args = parameters.enumerated().map {
+      (index, eachParam) -> TupleExprElementSyntax in
+      
+      let label = eachParam.firstName
+      let name = eachParam.secondName ?? eachParam.firstName
+      let nameToken: TokenSyntax
+      if usesTemplateArguments {
+        nameToken = TokenSyntax(.identifier("<#\(name.text)#>"), presence: .present)
+      } else {
+        nameToken = name
+      }
+      var syntax = TupleExprElementSyntax(
+        label: label.trimmed.text,
+        expression: IdentifierExprSyntax(identifier: nameToken)
+      ).with(\.colon, .colonToken(trailingTrivia: .spaces(1)))
+      
+      if parameterCount > 0 && (index + 1) < parameterCount {
+        syntax = syntax
+          .with(\.trailingComma, .commaToken(trailingTrivia: .spaces(1)))
+      }
+      
+      return syntax
+    }
+    return TupleExprElementListSyntax(args)
   }
   
 }

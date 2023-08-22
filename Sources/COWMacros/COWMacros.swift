@@ -58,6 +58,7 @@ public struct COWMacro:
   MemberAttributeMacro,
   NameLookupable
 {
+  
   // MARK: NameLookupable
   
   internal static var name: String {
@@ -75,78 +76,51 @@ public struct COWMacro:
     in context: Context
   ) throws -> [DeclSyntax] {
     
-    let structDecl = try getStructDecl(
-      from: declaration,
-      attributedBy: node
+    let structDecl = try getStructDecl(from: declaration, attributedBy: node)
+    
+    let factory = COWExpansionFactory(
+      node: node,
+      context: context,
+      appliedStructDecl: structDecl
     )
     
-    let (
-      appliedStructInitializedVarDecls,
-      appliedStructTypeAnnotatedVarDecls
-    ) = try classifyIncludeableVarDecls(in: structDecl)
-    
-    let userStorageTypeDecls = collectUserDefinedStorageTypeDecls(
-      in: declaration
-    )
-    
-    guard userStorageTypeDecls.count <= 1 else {
-        let firstInvalidStorageTypeDecl = userStorageTypeDecls[1]
-        throw DiagnosticsError(
-          syntax: firstInvalidStorageTypeDecl,
-          message:
-            """
-            Only one subtyped struct can be marked with @COWStorage in a \
-            @COW marked struct.
-            """,
-          id: .duplicateCOWStorages
-        )
+    if factory.diagnose() {
+      return []
     }
     
-    let userStorageTypeDecl = userStorageTypeDecls.first
+    let userDefinedStorageTypeDecls = 
+      structDecl.collectUserDefinedStorageTypeDecls()
     
-    // Create or use user-defined storage type
-    let storageTypeDecl: StructDeclSyntax
-    let isUserDefinedStorage: Bool
-    let userStorageTypeAnnotatedVarDecls: [VariableDeclSyntax]
+    factory.setUserDefinedStorageTypeDecls(userDefinedStorageTypeDecls)
     
-    if let userStorageTypeDecl = userStorageTypeDecl {
-      storageTypeDecl = userStorageTypeDecl
-      (_, userStorageTypeAnnotatedVarDecls) =
-        try classifyIncludeableVarDecls(in: userStorageTypeDecl)
-      isUserDefinedStorage = true
-    } else {
-      let varDecls = appliedStructInitializedVarDecls + appliedStructTypeAnnotatedVarDecls
-      if varDecls.isEmpty {
-        return []
-      }
-      storageTypeDecl = self.createStorageTypeDecl(
-        for: declaration,
-        with: varDecls,
-        in: context
-      )
-      userStorageTypeAnnotatedVarDecls = []
-      isUserDefinedStorage = false
+    if factory.diagnose() {
+      return []
     }
+    
+    if !factory.hasUserStorage && !factory.hasAnyAdoptableProperties {
+      return []
+    }
+    
+    let storageTypeDecl = factory.getStorageTypeDecl()
     
     let storageName = structDecl.copyOnWriteStorageName ?? defaultStorageName
     
     // Create storage member
-    let storageMemberDecl = createStorageMemberDecl(
+    let storageMemberDecl = factory.createStorageVarDecl(
       memberName: storageName,
       typeName: storageTypeDecl.typeName,
-      hasDefaultInitializer: appliedStructTypeAnnotatedVarDecls.isEmpty && userStorageTypeAnnotatedVarDecls.isEmpty
+      hasDefaultInitializer: factory.hasDefaultInitializerInStorage
     )
     
     // Create explicit initializer if needed
-    let explicitInitializerDecl = try createExplicitInitializerDeclIfNeeded(
-      for: structDecl,
-      expandedBy: node,
+    let explicitInitializerDecl = factory.createExplicitInitializerDeclIfNeeded(
       storageTypeDecl: storageTypeDecl,
-      isUserDefinedStorage: isUserDefinedStorage,
-      storageName: storageName,
-      appliedStructVarDecls: appliedStructTypeAnnotatedVarDecls,
-      userStorageStructVarDecls: userStorageTypeAnnotatedVarDecls
+      storageName: storageName
     )
+    
+    if factory.diagnose() {
+      return []
+    }
     
     var expansions = [DeclSyntax]()
     
@@ -196,36 +170,57 @@ public struct COWMacro:
         return []
       }
       
-      let storedVarDecls = collectStoredVarDecls(on: memberStructDecl)
-      var validIncludeableVarDecls = collectIncludeableVarDecls(
-        on: structDecl
-      ).filter(\.hasSingleBinding)
+      let storedVarDecls = memberStructDecl.collectStoredVarDecls()
+      var validAdoptableVarDecls = structDecl.collectAdoptableVarDecls()
+        .filter(\.hasSingleBinding)
       
       // Get var decls in user storage type decl
       // Remove equivalents in include-able var decls
       
-      for (index, eachVar) in validIncludeableVarDecls.enumerated().reversed() {
+      for (index, eachVar) in validAdoptableVarDecls.enumerated().reversed() {
         for eachStoredVar in storedVarDecls {
           if eachVar.isEquivalent(to: eachStoredVar) {
-            validIncludeableVarDecls.remove(at: index)
+            validAdoptableVarDecls.remove(at: index)
           }
         }
       }
       
-      guard !validIncludeableVarDecls.isEmpty else {
+      guard !validAdoptableVarDecls.isEmpty else {
         return []
       }
       
-      let result = validIncludeableVarDecls.map { eachVarDecl -> [AttributeSyntax] in
-        eachVarDecl.storagePropertyDescriptors.map { desc -> AttributeSyntax in
-          AttributeSyntax(TypeSyntax(SimpleTypeIdentifierSyntax(name: .identifier(COWStorageAddPropertyMacro.name)))) {
-            TupleExprElementSyntax(label: "keyword", expression: MemberAccessExprSyntax(name: desc.keyword.trimmed))
-            TupleExprElementSyntax(label: "name", expression: StringLiteralExprSyntax(content: desc.name.text))
+      let result = validAdoptableVarDecls.map { varDecl -> [AttributeSyntax] in
+        varDecl.storagePropertyDescriptors.map { desc -> AttributeSyntax in
+          AttributeSyntax(
+            TypeSyntax(
+              SimpleTypeIdentifierSyntax(
+                name: .identifier(COWStorageAddPropertyMacro.name)
+              )
+            )
+          ) {
+            TupleExprElementSyntax(
+              label: "keyword",
+              expression: MemberAccessExprSyntax(name: desc.keyword.trimmed)
+            )
+            TupleExprElementSyntax(
+              label: "name",
+              expression: StringLiteralExprSyntax(content: desc.name.text)
+            )
             if let type = desc.type {
-              TupleExprElementSyntax(label: "type", expression: StringLiteralExprSyntax(content: type.trimmedDescription))
+              TupleExprElementSyntax(
+                label: "type",
+                expression: StringLiteralExprSyntax(
+                  content: type.trimmedDescription
+                )
+              )
             }
             if let initializer = desc.initializer {
-              TupleExprElementSyntax(label: "initialValue", expression: StringLiteralExprSyntax(content: initializer.trimmedDescription))
+              TupleExprElementSyntax(
+                label: "initialValue",
+                expression: StringLiteralExprSyntax(
+                  content: initializer.trimmedDescription
+                )
+              )
             }
           }
         }
@@ -299,492 +294,6 @@ extension COWMacro {
     }
     
     return structDecl
-  }
-  
-  internal static func collectUserDefinedStorageTypeDecls<
-    Declaration: DeclGroupSyntax
-  >(in declaration: Declaration) -> [StructDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { eachItem in
-      guard let structDecl = eachItem.decl.as(StructDeclSyntax.self),
-            structDecl.hasMacroApplication(COWStorageMacro.name) else {
-        return nil
-      }
-      return structDecl
-    }
-  }
-  
-  internal static func collectIncludeableVarDecls<
-    Declaration: DeclGroupSyntax
-  >(on declaration: Declaration) -> [VariableDeclSyntax] {
-    return declaration.memberBlock.members.compactMap {
-      eachItem -> VariableDeclSyntax? in
-      guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
-            varDecl.isNotExcludedAndStored else {
-        return nil
-      }
-      return varDecl.trimmed
-    }
-  }
-  
-  internal static func collectStoredVarDecls<Declaration: DeclGroupSyntax>(
-    on declaration: Declaration
-  ) -> [VariableDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { eachItem in
-      guard let varDecl = eachItem.decl.as(VariableDeclSyntax.self),
-            varDecl.bindings.allSatisfy(\.isStored) else {
-        return nil
-      }
-      return varDecl.trimmed
-    }
-  }
-  
-  internal static func classifyIncludeableVarDecls<
-    Declaration: DeclGroupSyntax
-  >(
-    in declaration: Declaration
-  ) throws -> (
-    validWithInitializer: [VariableDeclSyntax],
-    validWithTypeAnnoation: [VariableDeclSyntax]
-  ) {
-    let collectedVarDecls = collectIncludeableVarDecls(on: declaration)
-    
-    let validVarDecls = collectedVarDecls.filter(\.hasSingleBinding)
-    let hasInitializer = validVarDecls
-      .filter(\.bindings.first!.hasInitializer)
-    let hasTypeAnnoation = validVarDecls
-      .filter(\.bindings.first!.hasNoInitializer)
-    let invalid = collectedVarDecls.filter(\.hasMultipleBindings)
-    
-    if !invalid.isEmpty {
-      let illMembers = declaration.memberBlock.members
-      
-      var fixedMembers = declaration.memberBlock.members
-      
-      for eachInvalid in invalid {
-        for (index, eachMember) in fixedMembers.enumerated().reversed() {
-          guard let varDecl = eachMember.decl.as(VariableDeclSyntax.self) else {
-            continue
-          }
-          if varDecl.isEquivalent(to: eachInvalid) {
-            let allReplaced = eachInvalid.bindings.map { eachBinding in
-              let fixedBinding = eachBinding
-                .with(\.trailingComma, nil)
-              return eachInvalid
-                .with(\.bindings, PatternBindingListSyntax([fixedBinding]))
-                .with(\.leadingTrivia, .newline)
-            }
-            fixedMembers = fixedMembers.removing(childAt: index)
-            for eachReplaced in allReplaced.reversed() {
-              fixedMembers = fixedMembers.inserting(
-                MemberDeclListItemSyntax(decl: eachReplaced), at: index
-              )
-            }
-          }
-        }
-      }
-      
-      throw DiagnosticsError.init(
-        syntax: illMembers,
-        message:
-          """
-          Decalring multiple stored properties over one variable declaration \
-          is an undefined behavior for the @COW macro.
-          """,
-        fixIts:
-          """
-          Split the variable decalrations with multiple variable bindings into \
-          seperate decalrations.
-          """,
-        changes: [
-          .replace(oldNode: Syntax(illMembers), newNode: Syntax(fixedMembers))
-        ],
-        id: .undefinedBehavior,
-        severity: .error
-      )
-    }
-    
-    return (hasInitializer, hasTypeAnnoation)
-  }
-  
-  internal static let autoSynthesizingProtocolTypes: Set<String> = [
-    "Equatable",
-    "Swift.Equatable",
-    "Hashable",
-    "Swift.Hashable",
-    "Codable",
-    "Swift.Codable",
-    "Encodable",
-    "Swift.Encodable",
-    "Decodable",
-    "Swift.Decodable",
-  ]
-  
-  internal static func collectAutoSynthesizingProtocolConformance<
-    Declaration: DeclGroupSyntax
-  >(
-    on declaration: Declaration
-  ) -> [InheritedTypeSyntax] {
-    guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-      return []
-    }
-    
-    guard let inheritedTypes
-            = structDecl.inheritanceClause?.inheritedTypeCollection else {
-      return []
-    }
-    
-    return inheritedTypes.filter { each in
-      if let ident = each.typeName.identifier {
-        if autoSynthesizingProtocolTypes.contains(ident) {
-          return true
-        }
-      }
-      return false
-    }
-  }
-  
-  internal static func createStorageTypeDecl<
-    Declaration: DeclGroupSyntax,
-    Context: MacroExpansionContext
-  >(
-    for declaration: Declaration,
-    with varDecls: [VariableDeclSyntax],
-    in context: Context
-  ) -> StructDeclSyntax {
-    let allMemebers = varDecls.map {
-      MemberDeclListItemSyntax(decl: $0)
-    }
-    let inheritance = TypeInheritanceClauseSyntax {
-      InheritedTypeListSyntax {
-        InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)
-      }
-      // Equatable, Hashable, Codeable
-      InheritedTypeListSyntax(
-        collectAutoSynthesizingProtocolConformance(on: declaration)
-      )
-    }
-    let typeName: TokenSyntax = "_$COWStorage"
-    return StructDeclSyntax(
-      identifier: typeName,
-      inheritanceClause: inheritance
-    ) {
-      MemberDeclListSyntax(allMemebers)
-    }
-  }
-  
-  internal static func createStorageMemberDecl(
-    memberName: TokenSyntax,
-    typeName: TokenSyntax,
-    hasDefaultInitializer: Bool
-  ) -> DeclSyntax {
-    if hasDefaultInitializer {
-      return
-        """
-        @\(raw: COWExcludedMacro.name)
-        @\(_Box.type)
-        var \(memberName): \(typeName) = \(typeName)()
-        """
-    } else {
-      return
-        """
-        @\(raw: COWExcludedMacro.name)
-        @\(_Box.type)
-        var \(memberName): \(typeName)
-        """
-    }
-  }
-  
-  internal struct StorageInitParameters {
-    
-    internal let appliedStructVarDecls: [VariableDeclSyntax]
-    
-    internal let userStorageStructVarDecls: [VariableDeclSyntax]
-    
-  }
-  
-  internal static func collectStorageInitParameters(
-    node: AttributeSyntax,
-    storageTypeDecl: StructDeclSyntax,
-    appliedStructVarDecls: [VariableDeclSyntax],
-    userStorageStructVarDecls: [VariableDeclSyntax]?
-  ) throws -> [FunctionParameterSyntax] {
-    let storageExplicitInitDecls = collectExplicitInitializers(
-      on: storageTypeDecl
-    )
-    
-    let parameters: [FunctionParameterSyntax]
-    
-    if storageExplicitInitDecls.isEmpty {
-      var allVars: [VariableDeclSyntax] = []
-      
-      allVars.append(contentsOf: appliedStructVarDecls)
-      if let userStorageStructVarDecls {
-        allVars.append(contentsOf: userStorageStructVarDecls)
-      }
-      
-      parameters = allVars.compactMap {
-        varDecl -> FunctionParameterSyntax? in
-        
-        guard let ident = varDecl.identifier else {
-          return nil
-        }
-        let firstBinding = varDecl.bindings[varDecl.bindings.startIndex]
-        guard let typeAnnotation = firstBinding.typeAnnotation else {
-          return nil
-        }
-        // Infer @escaping for function types.
-        if typeAnnotation.type.is(FunctionTypeSyntax.self) {
-          return
-            """
-            \(ident): @escaping \(typeAnnotation.type)
-            """
-        } else {
-          return
-            """
-            \(ident): \(typeAnnotation.type)
-            """
-        }
-      }
-    } else if storageExplicitInitDecls.count == 1 {
-      let funcSig = storageExplicitInitDecls[0].signature
-      parameters = funcSig.input.parameterList.map({$0})
-    } else {
-      throw DiagnosticsError(
-        syntax: node,
-        message:
-          """
-          Declaring multiple initializers on @COWStorage applied struct is an \
-          undefined behavior.
-          """,
-        id: .undefinedBehavior)
-    }
-    
-    if parameters.count > 1 {
-      var commaSeparatedParameters = [FunctionParameterSyntax]()
-      for (index, eachParameter) in parameters.enumerated() {
-        if (index + 1) < parameters.count {
-          commaSeparatedParameters.append(
-            eachParameter
-              .with(\.trailingComma, .commaToken(trailingTrivia: .space))
-          )
-        } else {
-          commaSeparatedParameters.append(eachParameter)
-        }
-      }
-      return commaSeparatedParameters
-    }
-    
-    return parameters
-  }
-  
-  internal static func collectExplicitInitializers<
-    Declaration: DeclGroupSyntax
-  >(on declaration: Declaration) -> [InitializerDeclSyntax] {
-    return declaration.memberBlock.members.compactMap { eachItem in
-      eachItem.decl.as(InitializerDeclSyntax.self)
-    }
-  }
-  
-  internal static func checkExplicitInitializers(
-    _ initializers: [InitializerDeclSyntax],
-    storageName: TokenSyntax,
-    storageTypeName: TokenSyntax,
-    parameters: [FunctionParameterSyntax]
-  ) throws {
-    for eachInit in initializers {
-      try checkStorageIsInitialized(
-        in: eachInit,
-        storageName: storageName,
-        storageTypeName: storageTypeName,
-        parameters: parameters
-      )
-    }
-  }
-  
-  internal static func createExplicitInitializerDeclIfNeeded<
-    Declaration: DeclGroupSyntax
-  >(
-    for declaration: Declaration,
-    expandedBy node: AttributeSyntax,
-    storageTypeDecl: StructDeclSyntax,
-    isUserDefinedStorage: Bool,
-    storageName: TokenSyntax,
-    appliedStructVarDecls: [VariableDeclSyntax],
-    userStorageStructVarDecls: [VariableDeclSyntax]?
-  ) throws -> InitializerDeclSyntax? {
-    
-    guard !appliedStructVarDecls.isEmpty
-            || userStorageStructVarDecls?.isEmpty == false else {
-      return nil
-    }
-    
-    let explicitInitializers = collectExplicitInitializers(on: declaration)
-    
-    let parameters = try collectStorageInitParameters(
-      node: node,
-      storageTypeDecl: storageTypeDecl,
-      appliedStructVarDecls: appliedStructVarDecls,
-      userStorageStructVarDecls: userStorageStructVarDecls
-    )
-    
-    guard explicitInitializers.isEmpty else {
-      try checkExplicitInitializers(
-        explicitInitializers,
-        storageName: storageName,
-        storageTypeName: storageTypeDecl.identifier,
-        parameters: parameters
-      )
-      return nil
-    }
-    
-    let parametersSynax = FunctionParameterListSyntax(parameters)
-    
-    let initDecl = try InitializerDeclSyntax("init(\(parametersSynax))") {
-      createInitStorageExpr(
-        storageName: storageName,
-        storageTypeName: storageTypeDecl.identifier,
-        parameters: parameters,
-        usesTemplateArguments: false
-      )
-    }
-    
-    return initDecl
-  }
-  
-  internal static func createInitStorageExpr(
-    storageName: TokenSyntax,
-    storageTypeName: TokenSyntax,
-    parameters: [FunctionParameterSyntax],
-    usesTemplateArguments: Bool
-  ) -> SequenceExprSyntax {
-    // SwiftParser diagnoses errors for editor placeholders generated by
-    // `createArgListSyntax` and cannot supress. We build the following syntax
-    // with syntax builder here.
-    // self.$storageName = $makeStorageName(...parameters)
-    return SequenceExprSyntax {
-      MemberAccessExprSyntax(
-        base: IdentifierExprSyntax(identifier: .keyword(.self)),
-        dot: .periodToken() ,
-        name: storageName
-      )
-      .with(\.trailingTrivia, .space)
-      AssignmentExprSyntax()
-      .with(\.trailingTrivia, .space)
-      FunctionCallExprSyntax(
-        calledExpression: IdentifierExprSyntax(
-          identifier: storageTypeName.trimmed
-        )
-      ) {
-        createArgListSyntax(
-          parameters: parameters,
-          usesTemplateArguments: usesTemplateArguments
-        )
-      }
-      .with(\.leftParen, .leftParenToken())
-      .with(\.rightParen, .rightParenToken())
-    }
-  }
-  
-  internal static func createArgListSyntax(
-    parameters: [FunctionParameterSyntax],
-    usesTemplateArguments: Bool
-  ) -> TupleExprElementListSyntax {
-    let parameterCount = parameters.count
-    let args = parameters.enumerated().map {
-      (index, eachParam) -> TupleExprElementSyntax in
-      
-      let label = eachParam.firstName
-      let name = eachParam.secondName ?? eachParam.firstName
-      let nameToken: TokenSyntax
-      if usesTemplateArguments {
-        nameToken = TokenSyntax(.identifier("<#\(name.text)#>"), presence: .present)
-      } else {
-        nameToken = name
-      }
-      var syntax = TupleExprElementSyntax(
-        label: label.trimmed.text,
-        expression: IdentifierExprSyntax(identifier: nameToken)
-      ).with(\.colon, .colonToken(trailingTrivia: .spaces(1)))
-      
-      if parameterCount > 0 && (index + 1) < parameterCount {
-        syntax = syntax
-          .with(\.trailingComma, .commaToken(trailingTrivia: .spaces(1)))
-      }
-      
-      return syntax
-    }
-    return TupleExprElementListSyntax(args)
-  }
-  
-  internal static func checkStorageIsInitialized(
-    in initializer: InitializerDeclSyntax,
-    storageName: TokenSyntax,
-    storageTypeName: TokenSyntax,
-    parameters: [FunctionParameterSyntax]
-  ) throws {
-    guard let body = initializer.body else {
-      return
-    }
-    for eachStmt in body.statements {
-      guard case .expr(let expr) = eachStmt.item else {
-        continue
-      }
-      guard let seqExpr = expr.as(SequenceExprSyntax.self) else {
-        continue
-      }
-      guard seqExpr.elements.count == 3 else {
-        continue
-      }
-      
-      let i1 = seqExpr.elements.startIndex
-      let i2 = seqExpr.elements.index(i1, offsetBy: 1)
-      
-      let expr1 = seqExpr.elements[i1]
-      let expr2 = seqExpr.elements[i2]
-      
-      guard let storage = expr1.as(MemberAccessExprSyntax.self) else {
-        continue
-      }
-      let storageBase = storage.base?.as(IdentifierExprSyntax.self)?.identifier
-      guard storageBase?.tokenKind == .keyword(.self) else {
-        continue
-      }
-      guard storage.name.tokenKind == storageName.tokenKind else {
-        continue
-      }
-      guard let _ = expr2.as(AssignmentExprSyntax.self) else {
-        continue
-      }
-      return
-    }
-    
-    let initStorage = createInitStorageExpr(
-        storageName: storageName,
-        storageTypeName: storageTypeName,
-        parameters: parameters,
-        usesTemplateArguments: true
-      )
-    
-    let fixedStmts = body.statements
-      .prepending(.init(item: .expr(ExprSyntax(initStorage))))
-    
-    throw DiagnosticsError(
-      syntax: initializer,
-      message:
-        """
-        @COW macro requires you to initialize the copy-on-write storage before \
-        initializing the properties.
-        """,
-      fixIts: "Initializes copy-on-write storage to make the @COW macro work.",
-      changes: [
-        FixIt.Change.replace(
-          oldNode: Syntax(body.statements),
-          newNode: Syntax(fixedStmts)
-        )
-      ],
-      id: .requiresManuallyInitializeStorage,
-      severity: .error
-    )
   }
   
 }
