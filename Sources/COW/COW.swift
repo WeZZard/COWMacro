@@ -179,9 +179,11 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   
   @inlinable
   public var wrappedValue: Contents {
+    @_effects(readonly)
     _read {
       yield _buffer.header
     }
+    @_effects(readwrite)
     _modify {
       _makeUniqueBufferIfNeeded()
       yield &_buffer.header
@@ -190,9 +192,11 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   
   @inlinable
   public var projectedValue: _Box {
+    @_effects(readonly)
     _read {
       yield self
     }
+    @_effects(readwrite)
     _modify {
       _makeUniqueBufferIfNeeded()
       yield &self
@@ -200,12 +204,14 @@ public struct _Box<Contents: CopyOnWriteStorage> {
   }
   
   @inlinable
+  @_semantics("array.make_mutable")
+  @_effects(notEscaping self.**)
   public mutating func _makeUniqueBufferIfNeeded() {
-    guard _slowPath(!isKnownUniquelyReferenced(&_buffer)) else {
+    guard _slowPath(!_isUnique_native(&_buffer)) else {
       return
     }
-    _buffer = .create(minimumCapacity: 1) { _ in
-      return self.wrappedValue
+    _buffer = .create(minimumCapacity: 1) { [_buffer] _ in
+      return _buffer.header
     }
   }
   

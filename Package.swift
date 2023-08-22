@@ -56,5 +56,9 @@ let package = Package(
             name: "COWUnitTests",
             dependencies: ["COW"]
         ),
+        .testTarget(
+            name: "COWPerformanceBenchmark",
+            dependencies: ["COW"]
+        ),
     ]
 )

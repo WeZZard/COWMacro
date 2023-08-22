@@ -334,23 +334,23 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
       )
     }
     
-    let getAccessor: AccessorDeclSyntax =
+    let readAccessor: AccessorDeclSyntax =
       """
-      get {
-        return \(storageName).\(identifier)
+      _read {
+        yield \(storageName).\(identifier)
       }
       """
     
-    let setAccessor: AccessorDeclSyntax =
+    let modifyAccessor: AccessorDeclSyntax =
       """
-      set {
-        \(storageName).\(identifier) = newValue
+      _modify {
+        yield &\(storageName).\(identifier)
       }
       """
     
     return [
-      getAccessor,
-      setAccessor,
+      readAccessor,
+      modifyAccessor,
     ]
   }
   
