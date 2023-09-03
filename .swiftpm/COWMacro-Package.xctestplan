@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "C9E26470-99CD-40A0-9F4F-18C8F25F33CA",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "COWIntegratedTests",
+        "name" : "COWIntegratedTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "COWMacrosTests",
+        "name" : "COWMacrosTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "COWUnitTests",
+        "name" : "COWUnitTests"
+      }
+    }
+  ],
+  "version" : 1
+}

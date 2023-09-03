@@ -31,11 +31,11 @@ final class COWMacroCollisionTests: XCTestCase {
       struct Foo {
       
         var value: Int = 0 {
-          get {
-            return _storage.value
+          _read {
+            yield _storage.value
           }
-          set {
-            _storage.value = newValue
+          _modify {
+            yield &_storage.value
           }
         }
         struct _$COWStorage: COW.CopyOnWriteStorage {

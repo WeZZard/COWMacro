@@ -67,11 +67,11 @@ final class COWMacroOLoCTests: XCTestCase {
       struct Foo {
       
         var value: Int = 0 {
-          get {
-            return _$storage.value
+          _read {
+            yield _$storage.value
           }
-          set {
-            _$storage.value = newValue
+          _modify {
+            yield &_$storage.value
           }
         }
         struct _$COWStorage: COW.CopyOnWriteStorage {
@@ -119,11 +119,11 @@ final class COWMacroOLoCTests: XCTestCase {
       struct Foo {
       
         var value: Int {
-          get {
-            return _$storage.value
+          _read {
+            yield _$storage.value
           }
-          set {
-            _$storage.value = newValue
+          _modify {
+            yield &_$storage.value
           }
         }
         struct _$COWStorage: COW.CopyOnWriteStorage {
@@ -172,11 +172,11 @@ final class COWMacroOLoCTests: XCTestCase {
       struct Foo: Equatable {
       
         var value: Int = 0 {
-          get {
-            return _$storage.value
+          _read {
+            yield _$storage.value
           }
-          set {
-            _$storage.value = newValue
+          _modify {
+            yield &_$storage.value
           }
         }
         struct _$COWStorage: COW.CopyOnWriteStorage, Equatable {
