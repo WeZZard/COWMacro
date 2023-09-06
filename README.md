@@ -1,4 +1,4 @@
-# Swift Compiler Indirect Macro Plugin
+# Swift Compiler Copy-on-Write Macro Plugin
 
 ## What Does It Solve?
 
@@ -123,6 +123,7 @@ struct Foo {
   
   }
   
+  @COWExcluded
   var name: String {
     get {
       return _$storage.name
@@ -174,6 +175,7 @@ struct Foo {
   
   }
   
+  @COWExcluded
   var name: String {
     get {
       return _$storage.name
@@ -188,6 +190,119 @@ struct Foo {
 }
 ```
 
+### Dealing With Storage Name Conflicts
+
+There could be other macros that declares a `_$storage` in your struct. The
+`@COW` macro has taken this into consideration: you can use the argument
+`storageName` to specify the name of the storage generated and used by the
+`@COW` macro.
+
+```swift
+@COW(storageName: "_myCOWStorage")
+@OtherMacroDeclares_$storage
+struct Foo {
+  
+  var string: String
+  
+  var array: [Int]
+  
+  var set: Set<Int>
+  
+  var dict: Dictionary<String : Int>
+  
+}
+```
+
+## How Does It Work?
+
+This macro forwards the stored properties in a struct to a heap storage that
+adopts copy-on-write behavior. The heap storage is composited by a content type
+which names `struct _$COWStorage` by default and a property wrapper called
+`@COW._Box` that adopts copy-on-write behavior and implements the heap store.
+
+The original:
+
+```swift
+struct Foo {
+  
+  var string: String
+  
+  var array: [Int]
+  
+  var set: Set<Int>
+  
+  var dict: Dictionary<String : Int>
+  
+}
+```
+
+After expansion:
+
+```swift
+@COW
+struct Foo {
+
+  // The content type
+  @COWStorage
+  struct _$COWStorage {
+  
+    var string: String
+  
+    var array: [Int]
+  
+    var set: Set<Int>
+  
+    var dict: Dictionary<String : Int>
+  
+  }
+  
+  // The storage member compsited with copy-on-write box property wrapper and
+  // the content type
+  @COW._Box
+  var _$storage: _$COWStorage
+  
+  @COWIncluded
+  var string: String {
+    get {
+        _$storage.string
+    }
+    set {
+        _$storage.string = newValue
+    }
+  }
+  
+  @COWIncluded
+  var array: [Int] {
+    get {
+        _$storage.array
+    }
+    set {
+        _$storage.array = newValue
+    }
+  }
+  
+  @COWIncluded
+  var set: Set<Int> {
+    get {
+        _$storage.set
+    }
+    set {
+        _$storage.set = newValue
+    }
+  }
+  
+  @COWIncluded
+  var dict: Dictionary<String : Int> {
+    get {
+        _$storage.dict
+    }
+    set {
+        _$storage.dict = newValue
+    }
+  }
+  
+}
+```
 
 ## License
 
