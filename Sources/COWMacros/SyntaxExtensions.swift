@@ -145,12 +145,20 @@ extension FunctionDeclSyntax {
 
 extension VariableDeclSyntax {
   
+  internal var isVarBinding: Bool {
+    return bindingKeyword.tokenKind == .keyword(.var)
+  }
+  
+  internal var isLetBinding: Bool {
+    return bindingKeyword.tokenKind == .keyword(.let)
+  }
+  
   internal var isIncluded: Bool {
-    hasMacroApplication(COWIncludedMacro.name)
+    return hasMacroApplication(COWIncludedMacro.name)
   }
   
   internal var isExcluded: Bool {
-    hasMacroApplication(COWExcludedMacro.name)
+    return hasMacroApplication(COWExcludedMacro.name)
   }
   
   internal var isNotExcludedAndStored: Bool {
@@ -173,7 +181,7 @@ extension VariableDeclSyntax {
   }
   
   internal var storagePropertyDescriptors: [COWStoragePropertyDescriptor] {
-    bindings.compactMap { binding in
+    return bindings.compactMap { binding in
       binding.storagePropertyDescriptor(bindingKeyword)
     }
   }

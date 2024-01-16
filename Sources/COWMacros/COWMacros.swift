@@ -348,10 +348,16 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
       }
       """
     
-    return [
-      readAccessor,
-      modifyAccessor,
-    ]
+    if varDecl.isLetBinding {
+      return [
+        readAccessor,
+      ]
+    } else {
+      return [
+        readAccessor,
+        modifyAccessor,
+      ]
+    }
   }
   
 }

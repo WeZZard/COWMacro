@@ -35,7 +35,7 @@ final class COWMacroOLoCTests: XCTestCase {
     )
   }
   
-  /// struct with properties having initializers.
+  /// struct with var binding properties having initializers.
   ///
   /// When the struct has no explicit initializers and the implicit
   /// initializer has no argument, we don't have to generate the
@@ -51,7 +51,7 @@ final class COWMacroOLoCTests: XCTestCase {
   /// }
   /// ```
   ///
-  func testStructWithPropertyHavingInitializer() {
+  func testStructWithVarBindingPropertyHavingInitializer() {
     assertMacroExpansion(
       """
       @COW
@@ -87,7 +87,56 @@ final class COWMacroOLoCTests: XCTestCase {
     )
   }
   
-  /// struct with properties having type annotations only.
+  /// struct with let binding properties having initializers.
+  ///
+  /// When the struct has no explicit initializers and the implicit
+  /// initializer has no argument, we don't have to generate the
+  /// initializer.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   valetr value: Int = 0
+  ///
+  /// }
+  /// ```
+  ///
+  func testStructWithLetBindingPropertyHavingInitializer() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        let value: Int = 0
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        let value: Int = 0 {
+          _read {
+            yield _$storage.value
+          }
+        }
+        struct _$COWStorage: COW.CopyOnWriteStorage {
+          let value: Int = 0
+        }
+        @COW._Box
+        var _$storage: _$COWStorage = _$COWStorage()
+      
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// struct with var binding properties having type annotations only.
   ///
   /// When the struct has no explicit initializers and the implicit
   /// initializer has arguments, we have to generate the make storage method
@@ -103,7 +152,7 @@ final class COWMacroOLoCTests: XCTestCase {
   /// }
   /// ```
   ///
-  func testStructWithPropertyHavingTypeAnnotationOnly() {
+  func testStructWithVarBindingPropertyHavingTypeAnnotationOnly() {
     assertMacroExpansion(
       """
       @COW
@@ -128,6 +177,58 @@ final class COWMacroOLoCTests: XCTestCase {
         }
         struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int
+        }
+        @COW._Box
+        var _$storage: _$COWStorage
+        init(value: Int) {
+          self._$storage = _$COWStorage(value: value)
+        }
+      
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// struct with let binding properties having type annotations only.
+  ///
+  /// When the struct has no explicit initializers and the implicit
+  /// initializer has arguments, we have to generate the make storage method
+  /// and an explicit initializer.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   var value: Int
+  ///
+  /// }
+  /// ```
+  ///
+  func testStructWithLetBindingPropertyHavingTypeAnnotationOnly() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        let value: Int
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        let value: Int {
+          _read {
+            yield _$storage.value
+          }
+        }
+        struct _$COWStorage: COW.CopyOnWriteStorage {
+          let value: Int
         }
         @COW._Box
         var _$storage: _$COWStorage
