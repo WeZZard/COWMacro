@@ -24,6 +24,18 @@ final class COWTests: XCTestCase {
   }
   
   @COW
+  struct WithInitialLetValue {
+    
+    let value: Int = 0
+    
+  }
+  
+  func testWithInitialLetValue() {
+    var fee = WithInitialLetValue()
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+  }
+  
+  @COW
   struct WithoutInitialValue {
     
     var value: Int
@@ -32,6 +44,18 @@ final class COWTests: XCTestCase {
 
   func testWithoutInitialValue() {
     var fee = WithoutInitialValue(value: 0)
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+  }
+  
+  @COW
+  struct WithoutInitialLetValue {
+    
+    var value: Int
+    
+  }
+
+  func testWithoutInitialLetValue() {
+    var fee = WithoutInitialLetValue(value: 0)
     primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
   }
   
@@ -52,6 +76,26 @@ final class COWTests: XCTestCase {
     primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
   }
   
+  // TODO: The following test case causes a compiler crash.
+  /*
+  @COW
+  struct WithExplicitInitializerForLet1 {
+    
+    let value: Int
+    
+    init(value: Int) {
+      self._$storage = _$COWStorage(value: value)
+      self.value = value
+    }
+
+  }
+  
+  func testWithExplicitInitializerForLet1() {
+    var fee = WithExplicitInitializerForLet1(value: 0)
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+  }
+   */
+  
   @COW
   private struct WithExplicitInitializer2 {
     
@@ -66,6 +110,23 @@ final class COWTests: XCTestCase {
   
   func testWithExplicitInitializer2() {
     var fee = WithExplicitInitializer2()
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+  }
+  
+  @COW
+  private struct WithExplicitInitializerForLet2 {
+    
+    var value: Int
+    
+    init() {
+      self._$storage = _$COWStorage(value: 0)
+      self.value = value
+    }
+
+  }
+  
+  func testWithExplicitInitializerForLet2() {
+    var fee = WithExplicitInitializerForLet2()
     primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
   }
   
@@ -91,6 +152,31 @@ final class COWTests: XCTestCase {
     primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
   }
   
+  // TODO: The following test case causes a compiler crash.
+  /*
+  @COW
+  struct WithStorageSingleLetType {
+    
+    @COWStorage
+    struct Storage {
+      
+    }
+    
+    let value: Int
+    
+    init(value: Int) {
+      self._$storage = Storage(value: value)
+      self.value = value
+    }
+
+  }
+  
+  func testWithStorageSingleLetType() {
+    var fee = WithStorageSingleLetType(value: 0)
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+  }
+   */
+   
   @COW
   struct WithStorageMultipleVarType {
     
@@ -112,6 +198,30 @@ final class COWTests: XCTestCase {
   
   func testWithStorageMultipleVarType() {
     var fee = WithStorageMultipleVarType(foo: 2, value: 3)
+    primitiveTestCRUD(&fee, properties: (\.foo, 2, 100), (\.value, 3, 50))
+  }
+  
+  @COW
+  struct WithStorageVarAndLetType {
+    
+    @COWStorage
+    struct Storage {
+      
+    }
+
+    var value: Int
+    
+    let foo: Int
+    
+    init(foo: Int, value: Int) {
+      self._$storage = Storage(value: value, foo: foo)
+      self.value = value
+    }
+
+  }
+  
+  func testWithStorageVarAndLetType() {
+    var fee = WithStorageVarAndLetType(foo: 2, value: 3)
     primitiveTestCRUD(&fee, properties: (\.foo, 2, 100), (\.value, 3, 50))
   }
   
@@ -257,7 +367,7 @@ final class COWTests: XCTestCase {
 }
 
 private typealias Property<Instance, Member> = (
-  keyPath: WritableKeyPath<Instance, Member>,
+  keyPath: KeyPath<Instance, Member>,
   initialValue: Member,
   updatedValue: Member
 )
@@ -290,22 +400,24 @@ private struct COWBehaviorTester: ~Copyable {
     
     let copiedInstance = instance
     
-    instance[keyPath: keyPath] = updatedValue
-    
-    XCTAssertEqual(
-      copiedInstance[keyPath: keyPath],
-      oldValue,
-      "Comparing copied initial value failed for \(keyPath) \(copiedInstance[keyPath: keyPath]) != \(oldValue)",
-      file: file,
-      line: line
-    )
-    XCTAssertEqual(
-      instance[keyPath: keyPath],
-      updatedValue,
-      "Comparing updated value failed for \(keyPath) \(instance[keyPath: keyPath]) != \(updatedValue)",
-      file: file,
-      line: line
-    )
+    if let keyPath = keyPath as? WritableKeyPath<Instance, Member> {
+      instance[keyPath: keyPath] = updatedValue
+      
+      XCTAssertEqual(
+        copiedInstance[keyPath: keyPath],
+        oldValue,
+        "Comparing copied initial value failed for \(keyPath) \(copiedInstance[keyPath: keyPath]) != \(oldValue)",
+        file: file,
+        line: line
+      )
+      XCTAssertEqual(
+        instance[keyPath: keyPath],
+        updatedValue,
+        "Comparing updated value failed for \(keyPath) \(instance[keyPath: keyPath]) != \(updatedValue)",
+        file: file,
+        line: line
+      )
+    }
   }
   
 }
