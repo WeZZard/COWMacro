@@ -292,6 +292,60 @@ final class COWMacroOLoCTests: XCTestCase {
       indentationWidth: .spaces(2)
     )
   }
+  
+  /// Do not expand on static properties.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   static var value: Int
+  ///   var baz: Int
+  ///
+  /// }
+  /// ```
+  ///
+  func testStructWithStaticProperties() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        static var bar: Int
+        var baz: Int
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        static var bar: Int
+        var baz: Int {
+          _read {
+            yield _$storage.baz
+          }
+          _modify {
+            yield &_$storage.baz
+          }
+        }
+        struct _$COWStorage: COW.CopyOnWriteStorage {
+          var baz: Int
+        }
+        @COW._Box
+        var _$storage: _$COWStorage
+        init(baz: Int) {
+          self._$storage = _$COWStorage(baz: baz)
+        }
+      
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
 
 }
 
