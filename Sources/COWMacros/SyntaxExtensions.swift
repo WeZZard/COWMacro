@@ -162,7 +162,11 @@ extension VariableDeclSyntax {
   }
   
   internal var isNotExcludedAndStored: Bool {
-    return !isExcluded && bindings.allSatisfy(\.isStored)
+    return !isExcluded && bindings.allSatisfy(\.isStored) && !isStatic
+  }
+  
+  internal var isStatic: Bool {
+    return modifiers?.contains(where: { $0.name.tokenKind == .keyword(.static)}) ?? false
   }
   
   internal var hasSingleBinding: Bool {
