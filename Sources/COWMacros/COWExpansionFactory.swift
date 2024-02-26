@@ -163,19 +163,19 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       checkExplicitInitializers(
         explicitInitializers,
         storageName: storageName,
-        storageTypeName: storageTypeDecl.identifier,
+        storageTypeName: storageTypeDecl.name,
         parameters: parameters
       )
       return nil
     }
     
     let parameterList = FunctionParameterListSyntax(parameters)
-    let parameterClauss = ParameterClauseSyntax(parameterList: parameterList)
-    let signature = FunctionSignatureSyntax(input: parameterClauss)
+    let parameterClauss = FunctionParameterClauseSyntax(parameters: parameterList)
+    let signature = FunctionSignatureSyntax(parameterClause: parameterClauss)
     return InitializerDeclSyntax(signature: signature) {
       createInitStorageExpr(
         storageName: storageName,
-        storageTypeName: storageTypeDecl.identifier,
+        storageTypeName: storageTypeDecl.name,
         parameters: parameters,
         usesTemplateArguments: false
       )
@@ -194,19 +194,19 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     // self.$storageName = $makeStorageName(...parameters)
     return SequenceExprSyntax {
       MemberAccessExprSyntax(
-        base: IdentifierExprSyntax(identifier: .keyword(.self)),
-        dot: .periodToken() ,
-        name: storageName
+        base: DeclReferenceExprSyntax(baseName: .keyword(.self)),
+        period: .periodToken() ,
+        declName: DeclReferenceExprSyntax(baseName: storageName)
       )
       .with(\.trailingTrivia, .space)
       AssignmentExprSyntax()
       .with(\.trailingTrivia, .space)
       FunctionCallExprSyntax(
-        calledExpression: IdentifierExprSyntax(
-          identifier: storageTypeName.trimmed
+        calledExpression: DeclReferenceExprSyntax(
+          baseName: storageTypeName.trimmed
         )
       ) {
-        TupleExprElementListSyntax.makeArgList(
+        LabeledExprListSyntax.makeArgList(
           parameters: parameters,
           usesTemplateArguments: usesTemplateArguments
         )
@@ -220,12 +220,13 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   
   private func createDerivedStorageTypeDecl() -> StructDeclSyntax {
     let members = appliedStructValidVarDecls.map {
-      MemberDeclListItemSyntax(decl: $0)
+      MemberBlockItemSyntax(decl: $0)
     }
     
-    let inheritance = TypeInheritanceClauseSyntax {
+    
+    let inheritance = InheritanceClauseSyntax {
       InheritedTypeListSyntax {
-        InheritedTypeSyntax(typeName: CopyOnWriteStorage.type)
+        InheritedTypeSyntax(type: CopyOnWriteStorage.type)
       }
       // Equatable, Hashable, Codeable
       InheritedTypeListSyntax(
@@ -236,10 +237,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     let typeName: TokenSyntax = "_$COWStorage"
     
     return StructDeclSyntax(
-      identifier: typeName,
+      name: typeName,
       inheritanceClause: inheritance
     ) {
-      MemberDeclListSyntax(members)
+      MemberBlockItemListSyntax(members)
     }
   }
   
@@ -285,7 +286,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       }
     } else if storageExplicitInitDecls.count == 1 {
       let funcSig = storageExplicitInitDecls[0].signature
-      parameters = funcSig.input.parameterList.map({$0})
+      parameters = funcSig.parameterClause.parameters.map({$0})
     } else {
       for eachInitDecl in storageExplicitInitDecls {
         report(
@@ -333,7 +334,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     var fixedMembers = appliedStructDecl.memberBlock.members
     
     for eachInvalid in appliedStructInvalidVarDecls {
-      for (index, eachMember) in fixedMembers.enumerated().reversed() {
+      for (_, eachMember) in fixedMembers.enumerated().reversed() {
         guard let varDecl = eachMember.decl.as(VariableDeclSyntax.self) else {
           continue
         }
@@ -345,12 +346,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
               .with(\.bindings, PatternBindingListSyntax([fixedBinding]))
               .with(\.leadingTrivia, .newline)
           }
-          fixedMembers = fixedMembers.removing(childAt: index)
-          for eachReplaced in allReplaced.reversed() {
-            fixedMembers = fixedMembers.inserting(
-              MemberDeclListItemSyntax(decl: eachReplaced), at: index
-            )
-          }
+          let index = fixedMembers.index(of: eachMember)!
+          fixedMembers.replaceSubrange(index..<fixedMembers.index(after: index), with: allReplaced.reversed().map({
+            MemberBlockItemSyntax(decl: $0)
+          }))
         }
       }
     }
@@ -422,11 +421,11 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       guard let storage = expr1.as(MemberAccessExprSyntax.self) else {
         continue
       }
-      let storageBase = storage.base?.as(IdentifierExprSyntax.self)?.identifier
+      let storageBase = storage.base?.as(DeclReferenceExprSyntax.self)?.baseName
       guard storageBase?.tokenKind == .keyword(.self) else {
         continue
       }
-      guard storage.name.tokenKind == storageName.tokenKind else {
+      guard storage.declName.baseName.tokenKind == storageName.tokenKind else {
         continue
       }
       guard let _ = expr2.as(AssignmentExprSyntax.self) else {
@@ -442,8 +441,8 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
         usesTemplateArguments: true
       )
     
-    let fixedStmts = body.statements
-      .prepending(.init(item: .expr(ExprSyntax(initStorage))))
+    var fixedStmts = body.statements
+    fixedStmts.insert(.init(item: .expr(ExprSyntax(initStorage))), at: fixedStmts.startIndex)
     
     report(
       DiagnosticsError(

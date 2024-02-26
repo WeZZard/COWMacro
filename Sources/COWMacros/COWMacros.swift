@@ -193,21 +193,21 @@ public struct COWMacro:
         varDecl.storagePropertyDescriptors.map { desc -> AttributeSyntax in
           AttributeSyntax(
             TypeSyntax(
-              SimpleTypeIdentifierSyntax(
+              IdentifierTypeSyntax(
                 name: .identifier(COWStorageAddPropertyMacro.name)
               )
             )
           ) {
-            TupleExprElementSyntax(
+            LabeledExprSyntax(
               label: "keyword",
               expression: MemberAccessExprSyntax(name: desc.keyword.trimmed)
             )
-            TupleExprElementSyntax(
+            LabeledExprSyntax(
               label: "name",
               expression: StringLiteralExprSyntax(content: desc.name.text)
             )
             if let type = desc.type {
-              TupleExprElementSyntax(
+              LabeledExprSyntax(
                 label: "type",
                 expression: StringLiteralExprSyntax(
                   content: type.trimmedDescription
@@ -215,7 +215,7 @@ public struct COWMacro:
               )
             }
             if let initializer = desc.initializer {
-              TupleExprElementSyntax(
+              LabeledExprSyntax(
                 label: "initialValue",
                 expression: StringLiteralExprSyntax(
                   content: initializer.trimmedDescription
@@ -242,7 +242,7 @@ extension COWMacro {
     attributedBy node: AttributeSyntax
   ) throws -> StructDeclSyntax {
     guard let identifiedDecl
-            = declaration.asProtocol(IdentifiedDeclSyntax.self) else {
+            = declaration.asProtocol(NamedDeclSyntax.self) else {
       throw DiagnosticsError(
         syntax: node,
         message:
@@ -255,7 +255,7 @@ extension COWMacro {
       )
     }
     
-    let appliedType = identifiedDecl.identifier
+    let appliedType = identifiedDecl.name
     
     if declaration.isEnum {
       throw DiagnosticsError(
@@ -322,7 +322,7 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
       return []
     }
     
-    guard let storageName = node.argument?.storageName else {
+    guard let storageName = node.arguments?.storageName else {
       throw DiagnosticsError(
         syntax: node,
         message:
@@ -389,7 +389,7 @@ public struct COWExcludedMacro: PeerMacro, NameLookupable {
 
 // MARK: - @COWStorage
 
-public struct COWStorageMacro: ConformanceMacro, NameLookupable {
+public struct COWStorageMacro: ExtensionMacro, NameLookupable {
   
   // MARK: - NameLookupable
   
@@ -397,33 +397,36 @@ public struct COWStorageMacro: ConformanceMacro, NameLookupable {
     "COWStorage"
   }
   
-  // MARK: - ConformanceMacro
+  // MARK: - ExtensionMacro
   
-  public static func expansion<
-    Declaration : DeclGroupSyntax,
-    Context : MacroExpansionContext
-  >(
-    of node: AttributeSyntax,
-    providingConformancesOf declaration: Declaration,
-    in context: Context
-  ) throws -> [(TypeSyntax, GenericWhereClauseSyntax?)] {
+  public static func expansion(
+      of node: SwiftSyntax.AttributeSyntax,
+      attachedTo declaration: some SwiftSyntax.DeclGroupSyntax,
+      providingExtensionsOf type: some SwiftSyntax.TypeSyntaxProtocol, 
+      conformingTo protocols: [SwiftSyntax.TypeSyntax],
+      in context: some SwiftSyntaxMacros.MacroExpansionContext
+  ) throws -> [SwiftSyntax.ExtensionDeclSyntax] {
     let inheritanceList: InheritedTypeListSyntax?
     
     if let structDecl = declaration.as(StructDeclSyntax.self) {
-      inheritanceList = structDecl.inheritanceClause?.inheritedTypeCollection
+      inheritanceList = structDecl.inheritanceClause?.inheritedTypes
     } else {
       inheritanceList = nil
     }
     
     if let inheritanceList {
       for inheritance in inheritanceList {
-        if inheritance.typeName.identifier == CopyOnWriteStorage.name {
+        if inheritance.type.identifier == CopyOnWriteStorage.name {
           return []
         }
       }
     }
     
-    return [(CopyOnWriteStorage.type, nil)]
+    let decl: DeclSyntax =
+      """
+      extension \(type.trimmed): \(CopyOnWriteStorage.type.trimmed) {}
+      """
+    return [decl.cast(ExtensionDeclSyntax.self)]
   }
   
 }
@@ -468,7 +471,7 @@ public struct COWStorageAddPropertyMacro: MemberMacro, NameLookupable {
       )
     }
     
-    guard let arg = node.argument else {
+    guard let arg = node.arguments else {
       throw DiagnosticsError(
         syntax: node,
         message: "No argument found for macro @COWStorageAddProperty.",

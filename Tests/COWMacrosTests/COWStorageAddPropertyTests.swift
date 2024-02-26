@@ -29,8 +29,10 @@ final class COWStorageAddPropertyTests: XCTestCase {
       expandedSource: """
       
       struct Foo {
+
         var value : Int = 0
       }
+
       extension Foo: COW.CopyOnWriteStorage {
       }
       """,
@@ -55,8 +57,10 @@ final class COWStorageAddPropertyTests: XCTestCase {
       expandedSource: """
       
       struct Foo {
+
         var value = 0
       }
+
       extension Foo: COW.CopyOnWriteStorage {
       }
       """,

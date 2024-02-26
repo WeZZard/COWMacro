@@ -66,17 +66,17 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       }
       """,
       expandedSource:
-        // FIXME: Bar.Storage shall conform to COW.CopyOnWriteStorage
       """
       
       struct Bar {
+        
         struct Storage {
-      
+          
           @Capitalized
           var value: String
-      
+          
         }
-      
+        
         var value: String {
           get {
             return _$storage.value
@@ -87,10 +87,14 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
         }
         @COW._Box
         var _$storage: Storage
+
         init(value: String) {
           self._$storage = Storage(value: value)
         }
-      
+        
+      }
+
+      extension Storage: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros,
@@ -151,21 +155,21 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
       }
       """,
       expandedSource:
-        // FIXME: Foo.Storage shall conform to COW.CopyOnWriteStorage
       """
       
       struct Foo {
+        
         struct Storage {
-      
+          
           @Capitalized
           var value: String
-      
+
           init(value: Capitalized<String>) {
             _value = value
           }
-      
+          
         }
-      
+        
         var value: String {
           get {
             return _$storage.value
@@ -174,13 +178,16 @@ final class COWMacroPropertyWrapperTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-      
+
         init(value: Capitalized<String>) {
           self._$storage = Storage(value: value)
         }
         @COW._Box
         var _$storage: Storage
-      
+        
+      }
+
+      extension Storage: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros,

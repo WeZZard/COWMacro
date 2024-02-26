@@ -65,7 +65,7 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo {
-      
+
         var value: Int = 0 {
           _read {
             yield _$storage.value
@@ -74,12 +74,13 @@ final class COWMacroOLoCTests: XCTestCase {
             yield &_$storage.value
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int = 0
         }
         @COW._Box
         var _$storage: _$COWStorage = _$COWStorage()
-      
+
       }
       """,
       macros: testedMacros,
@@ -117,18 +118,19 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo {
-      
+
         let value: Int = 0 {
           _read {
             yield _$storage.value
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage {
           let value: Int = 0
         }
         @COW._Box
         var _$storage: _$COWStorage = _$COWStorage()
-      
+
       }
       """,
       macros: testedMacros,
@@ -166,7 +168,7 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo {
-      
+
         var value: Int {
           _read {
             yield _$storage.value
@@ -175,15 +177,17 @@ final class COWMacroOLoCTests: XCTestCase {
             yield &_$storage.value
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int
         }
         @COW._Box
         var _$storage: _$COWStorage
+
         init(value: Int) {
           self._$storage = _$COWStorage(value: value)
         }
-      
+
       }
       """,
       macros: testedMacros,
@@ -221,21 +225,23 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo {
-      
+
         let value: Int {
           _read {
             yield _$storage.value
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage {
           let value: Int
         }
         @COW._Box
         var _$storage: _$COWStorage
+
         init(value: Int) {
           self._$storage = _$COWStorage(value: value)
         }
-      
+
       }
       """,
       macros: testedMacros,
@@ -271,7 +277,7 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo: Equatable {
-      
+
         var value: Int = 0 {
           _read {
             yield _$storage.value
@@ -280,12 +286,13 @@ final class COWMacroOLoCTests: XCTestCase {
             yield &_$storage.value
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage, Equatable {
           var value: Int = 0
         }
         @COW._Box
         var _$storage: _$COWStorage = _$COWStorage()
-      
+
       }
       """,
       macros: testedMacros,
@@ -321,7 +328,7 @@ final class COWMacroOLoCTests: XCTestCase {
       """
       
       struct Foo {
-      
+
         static var bar: Int
         var baz: Int {
           _read {
@@ -331,15 +338,17 @@ final class COWMacroOLoCTests: XCTestCase {
             yield &_$storage.baz
           }
         }
+
         struct _$COWStorage: COW.CopyOnWriteStorage {
           var baz: Int
         }
         @COW._Box
         var _$storage: _$COWStorage
+
         init(baz: Int) {
           self._$storage = _$COWStorage(baz: baz)
         }
-      
+
       }
       """,
       macros: testedMacros,

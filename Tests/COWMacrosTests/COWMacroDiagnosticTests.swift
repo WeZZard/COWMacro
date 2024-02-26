@@ -85,15 +85,24 @@ final class COWMacroDiagnosticTests: XCTestCase {
       """
       
       struct Fee {
+        
         struct Storage {
-      
+          
         }
-      
+        
         var foo: Int = 0, bar: Int = 0
-      
+        
+      }
+
+      extension Storage: COW.CopyOnWriteStorage {
       }
       """,
       diagnostics: [
+        DiagnosticSpec(
+          message: "swift-syntax applies macros syntactically and there is no way to represent a variable declaration with multiple bindings that have accessors syntactically. While the compiler allows this expansion, swift-syntax cannot represent it and thus disallows it.",
+          line: 8,
+          column: 3
+        ),
         DiagnosticSpec(
           message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
           line: 4,
