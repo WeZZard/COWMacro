@@ -463,8 +463,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
         usesTemplateArguments: true
       )
     
-    var fixedStmts = body.statements
-    fixedStmts.insert(.init(item: .expr(ExprSyntax(initStorage))), at: fixedStmts.startIndex)
+    let fixedItems = [CodeBlockItemSyntax(item: .expr(ExprSyntax(initStorage)))]
+      + Array(body.statements)
+    
+    let fixedStmts = CodeBlockItemListSyntax(fixedItems)
     
     report(
       DiagnosticsError(
