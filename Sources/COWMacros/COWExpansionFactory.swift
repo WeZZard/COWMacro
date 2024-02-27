@@ -170,8 +170,8 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
     
     let parameterList = FunctionParameterListSyntax(parameters)
-    let parameterClauss = FunctionParameterClauseSyntax(parameters: parameterList)
-    let signature = FunctionSignatureSyntax(parameterClause: parameterClauss)
+    let parameterClause = FunctionParameterClauseSyntax(parameters: parameterList)
+    let signature = FunctionSignatureSyntax(parameterClause: parameterClause)
     return InitializerDeclSyntax(signature: signature) {
       createInitStorageExpr(
         storageName: storageName,
@@ -331,32 +331,54 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     
     let illMembers = appliedStructDecl.memberBlock.members
     
-    var fixedMembers = appliedStructDecl.memberBlock.members
+    guard !illMembers.isEmpty else {
+      return
+    }
     
-    for eachInvalid in appliedStructInvalidVarDecls {
-      for (_, eachMember) in fixedMembers.enumerated().reversed() {
+    var fixedMembers = illMembers
+    
+    typealias Replacement = (MemberBlockItemListSyntax.Index, [MemberBlockItemSyntax])
+    var replacements: [Replacement] = []
+    
+    for eachInvalidVarDecl in appliedStructInvalidVarDecls {
+      
+      for index in illMembers.indices {
+        let eachMember = illMembers[index]
+        
         guard let varDecl = eachMember.decl.as(VariableDeclSyntax.self) else {
           continue
         }
-        if varDecl.isEquivalent(to: eachInvalid) {
-          let allReplaced = eachInvalid.bindings.map { eachBinding in
-            let fixedBinding = eachBinding
+        
+        if varDecl.isEquivalent(to: eachInvalidVarDecl) {
+          
+          let fixedVarsDecls = eachInvalidVarDecl.bindings.map { binding in
+            let fixedBinding = binding
               .with(\.trailingComma, nil)
-            return eachInvalid
+            return eachInvalidVarDecl
               .with(\.bindings, PatternBindingListSyntax([fixedBinding]))
-              .with(\.leadingTrivia, .newline)
           }
-          let index = fixedMembers.index(of: eachMember)!
-          fixedMembers.replaceSubrange(index..<fixedMembers.index(after: index), with: allReplaced.reversed().map({
+          
+          let fixedItems = fixedVarsDecls.map({
             MemberBlockItemSyntax(decl: $0)
-          }))
+              .with(\.leadingTrivia, eachMember.leadingTrivia)
+              .with(\.trailingTrivia, eachMember.trailingTrivia)
+          })
+          
+          replacements.append((index, fixedItems))
         }
+        
       }
+      
+    }
+    
+    for (index, items) in replacements.reversed() {
+      let replaceEnd = fixedMembers.index(after: index)
+      fixedMembers.replaceSubrange(index..<replaceEnd, with: items)
     }
     
     report(
       DiagnosticsError(
-        syntax: illMembers,
+        syntax: appliedStructDecl,
         message:
             """
             Decalring multiple stored properties over one variable declaration \
