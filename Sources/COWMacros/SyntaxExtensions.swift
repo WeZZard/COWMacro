@@ -85,9 +85,6 @@ internal struct COWStoragePropertyDescriptor {
 extension WithAttributesSyntax {
   
   internal func hasMacroApplication(_ name: String) -> Bool {
-    guard let attributes else {
-      return false
-    }
     for each in attributes where each.hasName(name) {
       return true
     }
@@ -100,19 +97,15 @@ extension StructDeclSyntax {
   
   internal var typeName: TokenSyntax {
     return TokenSyntax(
-     identifier.tokenKind,
-      presence: identifier.presence
+      name.tokenKind,
+      presence: name.presence
     )
   }
   
   internal var copyOnWriteStorageName: TokenSyntax? {
-    guard let attributes else {
-      return nil
-    }
-    
     for eachAttribute in attributes {
       guard case .attribute(let attribute) = eachAttribute,
-            let storageName = attribute.argument?.storageName else {
+            let storageName = attribute.arguments?.storageName else {
         continue
       }
       return storageName
@@ -121,7 +114,7 @@ extension StructDeclSyntax {
   }
   
   internal func isEquivalent(to other: StructDeclSyntax) -> Bool {
-    return identifier == other.identifier
+    return name == other.name
   }
   
 }
@@ -129,12 +122,10 @@ extension StructDeclSyntax {
 extension FunctionDeclSyntax {
   
   internal var isStatic: Bool {
-    if let modifiers {
-      for modifier in modifiers {
-        for token in modifier.tokens(viewMode: .all) {
-          if token.tokenKind == .keyword(.static) {
-            return true
-          }
+    for modifier in modifiers {
+      for token in modifier.tokens(viewMode: .all) {
+        if token.tokenKind == .keyword(.static) {
+          return true
         }
       }
     }
@@ -146,11 +137,11 @@ extension FunctionDeclSyntax {
 extension VariableDeclSyntax {
   
   internal var isVarBinding: Bool {
-    return bindingKeyword.tokenKind == .keyword(.var)
+    return bindingSpecifier.tokenKind == .keyword(.var)
   }
   
   internal var isLetBinding: Bool {
-    return bindingKeyword.tokenKind == .keyword(.let)
+    return bindingSpecifier.tokenKind == .keyword(.let)
   }
   
   internal var isIncluded: Bool {
@@ -166,7 +157,7 @@ extension VariableDeclSyntax {
   }
   
   internal var isStatic: Bool {
-    return modifiers?.contains(where: { $0.name.tokenKind == .keyword(.static)}) ?? false
+    return modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) })
   }
   
   internal var hasSingleBinding: Bool {
@@ -186,7 +177,7 @@ extension VariableDeclSyntax {
   
   internal var storagePropertyDescriptors: [COWStoragePropertyDescriptor] {
     return bindings.compactMap { binding in
-      binding.storagePropertyDescriptor(bindingKeyword)
+      binding.storagePropertyDescriptor(bindingSpecifier)
     }
   }
   
@@ -221,11 +212,11 @@ extension AttributeSyntax {
 extension PatternBindingSyntax {
   
   internal var isStored: Bool {
-    return accessor == nil
+    return accessorBlock == nil
   }
   
   internal var isComputed: Bool {
-    return accessor != nil
+    return accessorBlock != nil
   }
   
   internal var hasInitializer: Bool {
@@ -256,7 +247,7 @@ extension PatternBindingSyntax {
   
 }
 
-extension AttributeSyntax.Argument {
+extension AttributeSyntax.Arguments {
   
   internal func getArg(at offset: Int, name: String) -> ExprSyntax? {
     guard case .argumentList(let args) = self else {
@@ -321,7 +312,7 @@ extension AttributeSyntax.Argument {
     let keywordArg = arg0.as(MemberAccessExprSyntax.self)
     let nameArg = arg1.as(StringLiteralExprSyntax.self)
     
-    guard let keyword = keywordArg?.name else {
+    guard let keyword = keywordArg?.declName.baseName else {
       return nil
     }
     guard let name = nameArg?.trimmed.segments.description else {
@@ -363,10 +354,10 @@ extension InitializerDeclSyntax {
   
   internal var signatureStandin: SignatureStandin {
     var parameters = [String]()
-    for parameter in signature.input.parameterList {
-      parameters.append(parameter.firstName.text + ":" + (parameter.type.genericSubstitution(genericParameterClause?.genericParameterList) ?? "" ))
+    for parameter in signature.parameterClause.parameters {
+      parameters.append(parameter.firstName.text + ":" + (parameter.type.genericSubstitution(genericParameterClause?.parameters) ?? "" ))
     }
-    let returnType = signature.output?.returnType.genericSubstitution(genericParameterClause?.genericParameterList) ?? "Void"
+    let returnType = signature.returnClause?.type.genericSubstitution(genericParameterClause?.parameters) ?? "Void"
     return SignatureStandin(parameters: parameters, returnType: returnType)
   }
   
@@ -399,12 +390,12 @@ extension DeclGroupSyntax {
     }
     
     guard let inheritedTypes
-            = structDecl.inheritanceClause?.inheritedTypeCollection else {
+            = structDecl.inheritanceClause?.inheritedTypes else {
       return []
     }
     
     return inheritedTypes.filter { each in
-      if let ident = each.typeName.identifier {
+      if let ident = each.type.identifier {
         if autoSynthesizingProtocolTypes.contains(ident) {
           return true
         }
@@ -476,7 +467,7 @@ extension DeclGroupSyntax {
   
   internal func hasMemberStruct(equivalentTo other: StructDeclSyntax) -> Bool {
     for member in memberBlock.members {
-      if let `struct` = member.as(MemberDeclListItemSyntax.self)?.decl.as(StructDeclSyntax.self) {
+      if let `struct` = member.as(MemberBlockItemSyntax.self)?.decl.as(StructDeclSyntax.self) {
         if `struct`.isEquivalent(to: other) {
           return true
         }
@@ -487,7 +478,7 @@ extension DeclGroupSyntax {
   
   internal func hasMemberInit(equivalentTo other: InitializerDeclSyntax) -> Bool {
     for member in memberBlock.members {
-      if let `init` = member.as(MemberDeclListItemSyntax.self)?.decl.as(InitializerDeclSyntax.self) {
+      if let `init` = member.as(MemberBlockItemSyntax.self)?.decl.as(InitializerDeclSyntax.self) {
         if `init`.isEquivalent(to: other) {
           return true
         }
@@ -509,15 +500,15 @@ extension DeclGroupSyntax {
   
 }
 
-extension TupleExprElementListSyntax {
+extension LabeledExprListSyntax {
   
   internal static func makeArgList(
     parameters: [FunctionParameterSyntax],
     usesTemplateArguments: Bool
-  ) -> TupleExprElementListSyntax {
+  ) -> LabeledExprListSyntax {
     let parameterCount = parameters.count
     let args = parameters.enumerated().map {
-      (index, eachParam) -> TupleExprElementSyntax in
+      (index, eachParam) -> LabeledExprSyntax in
       
       let label = eachParam.firstName
       let name = eachParam.secondName ?? eachParam.firstName
@@ -527,9 +518,9 @@ extension TupleExprElementListSyntax {
       } else {
         nameToken = name
       }
-      var syntax = TupleExprElementSyntax(
+      var syntax = LabeledExprSyntax(
         label: label.trimmed.text,
-        expression: IdentifierExprSyntax(identifier: nameToken)
+        expression: DeclReferenceExprSyntax(baseName: nameToken)
       ).with(\.colon, .colonToken(trailingTrivia: .spaces(1)))
       
       if parameterCount > 0 && (index + 1) < parameterCount {
@@ -539,7 +530,7 @@ extension TupleExprElementListSyntax {
       
       return syntax
     }
-    return TupleExprElementListSyntax(args)
+    return LabeledExprListSyntax(args)
   }
   
 }

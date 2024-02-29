@@ -38,6 +38,7 @@ final class COWMacroCollisionTests: XCTestCase {
             yield &_storage.value
           }
         }
+      
         struct _$COWStorage: COW.CopyOnWriteStorage {
           var value: Int = 0
         }

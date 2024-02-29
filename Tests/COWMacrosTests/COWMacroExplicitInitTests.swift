@@ -111,7 +111,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
         """
         
         struct Foo {
-        
+
           var value: Int {
             _read {
               yield _$storage.value
@@ -120,11 +120,12 @@ final class COWMacroExplicitInitTests: XCTestCase {
               yield &_$storage.value
             }
           }
-        
+
           init(value: Int) {
             self._$storage = _$COWStorage(value: value)
             self.value = value
           }
+
           struct _$COWStorage: COW.CopyOnWriteStorage {
             var value: Int
           }
@@ -202,20 +203,19 @@ final class COWMacroExplicitInitTests: XCTestCase {
       }
       """,
       expandedSource:
-      // FIXME: Foo.Bar shall conform to CopyOnWriteStorage
       """
       
       struct Foo {
         struct Bar {
-      
+
           var value: Int
-      
+
           init(value: Int) {
             self.value = value
           }
-      
+
         }
-      
+
         var value: Int {
           get {
             return _$storage.value
@@ -224,10 +224,13 @@ final class COWMacroExplicitInitTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-      
+
         init(value: Int) {
           self.value = value
         }
+      }
+
+      extension Bar: COW.CopyOnWriteStorage {
       }
       """,
       diagnostics: [
@@ -278,20 +281,19 @@ final class COWMacroExplicitInitTests: XCTestCase {
       }
       """,
       expandedSource:
-      // FIXME: Foo.Bar shall conform to CopyOnWriteStorage
       """
       
       struct Foo {
         struct Bar {
-      
+
           var value: Int
-      
+
           init(value: Int) {
             self.value = value
           }
-      
+
         }
-      
+
         var value: Int {
           get {
             return _$storage.value
@@ -300,13 +302,16 @@ final class COWMacroExplicitInitTests: XCTestCase {
             _$storage.value = newValue
           }
         }
-      
+
         init(value: Int) {
           self._$storage = Bar(value: value)
           self.value = value
         }
         @COW._Box
         var _$storage: Bar
+      }
+
+      extension Bar: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros,

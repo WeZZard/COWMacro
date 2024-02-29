@@ -85,19 +85,88 @@ final class COWMacroDiagnosticTests: XCTestCase {
       """
       
       struct Fee {
+        
         struct Storage {
-      
+          
         }
-      
+        
         var foo: Int = 0, bar: Int = 0
-      
+        
+      }
+
+      extension Storage: COW.CopyOnWriteStorage {
       }
       """,
       diagnostics: [
         DiagnosticSpec(
+          message: "swift-syntax applies macros syntactically and there is no way to represent a variable declaration with multiple bindings that have accessors syntactically. While the compiler allows this expansion, swift-syntax cannot represent it and thus disallows it.",
+          line: 8,
+          column: 3
+        ),
+        DiagnosticSpec(
           message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
-          line: 4,
-          column: 3,
+          line: 1,
+          column: 1,
+          fixIts: [
+            FixItSpec(message: "Split the variable decalrations with multiple variable bindings into seperate decalrations.")
+          ]
+        ),
+      ],
+      macros: testedMacros
+    )
+  }
+  
+  func testDiagnosesUndefinedBehaviorMultipleVariableDeclMultipleBindings() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Fee {
+        
+        @COWStorage
+        struct Storage {
+          
+        }
+        
+        var foo: Int = 0, bar: Int = 0
+        
+        var fee: Int = 0, foe: Int = 0
+        
+      }
+      """
+      ,
+      expandedSource:
+      """
+      
+      struct Fee {
+        
+        struct Storage {
+          
+        }
+        
+        var foo: Int = 0, bar: Int = 0
+        
+        var fee: Int = 0, foe: Int = 0
+        
+      }
+
+      extension Storage: COW.CopyOnWriteStorage {
+      }
+      """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "swift-syntax applies macros syntactically and there is no way to represent a variable declaration with multiple bindings that have accessors syntactically. While the compiler allows this expansion, swift-syntax cannot represent it and thus disallows it.",
+          line: 8,
+          column: 3
+        ),
+        DiagnosticSpec(
+          message: "swift-syntax applies macros syntactically and there is no way to represent a variable declaration with multiple bindings that have accessors syntactically. While the compiler allows this expansion, swift-syntax cannot represent it and thus disallows it.",
+          line: 10,
+          column: 3
+        ),
+        DiagnosticSpec(
+          message: "Decalring multiple stored properties over one variable declaration is an undefined behavior for the @COW macro.",
+          line: 1,
+          column: 1,
           fixIts: [
             FixItSpec(message: "Split the variable decalrations with multiple variable bindings into seperate decalrations.")
           ]

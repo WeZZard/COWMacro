@@ -22,9 +22,6 @@ extension VariableDeclSyntax {
   }
   
   internal func firstMacroApplication(_ name: String) -> AttributeSyntax? {
-    guard let attributes else {
-      return nil
-    }
     for each in attributes where each.hasName(name) {
       switch each {
       case .attribute(let attrSyntax):
@@ -37,12 +34,10 @@ extension VariableDeclSyntax {
   }
   
   internal var isInstance: Bool {
-    if let modifiers {
-      for modifier in modifiers {
-        for token in modifier.tokens(viewMode: .all) {
-          if token.tokenKind == .keyword(.static) || token.tokenKind == .keyword(.class) {
-            return false
-          }
+    for modifier in modifiers {
+      for token in modifier.tokens(viewMode: .all) {
+        if token.tokenKind == .keyword(.static) || token.tokenKind == .keyword(.class) {
+          return false
         }
       }
     }
@@ -110,12 +105,10 @@ extension TypeSyntax {
 extension FunctionDeclSyntax {
   
   internal var isInstance: Bool {
-    if let modifiers {
-      for modifier in modifiers {
-        for token in modifier.tokens(viewMode: .all) {
-          if token.tokenKind == .keyword(.static) || token.tokenKind == .keyword(.class) {
-            return false
-          }
+    for modifier in modifiers {
+      for token in modifier.tokens(viewMode: .all) {
+        if token.tokenKind == .keyword(.static) || token.tokenKind == .keyword(.class) {
+          return false
         }
       }
     }
@@ -131,11 +124,11 @@ extension FunctionDeclSyntax {
   
   internal var signatureStandin: SignatureStandin {
     var parameters = [String]()
-    for parameter in signature.input.parameterList {
-      parameters.append(parameter.firstName.text + ":" + (parameter.type.genericSubstitution(genericParameterClause?.genericParameterList) ?? "" ))
+    for parameter in signature.parameterClause.parameters {
+      parameters.append(parameter.firstName.text + ":" + (parameter.type.genericSubstitution(genericParameterClause?.parameters) ?? "" ))
     }
-    let returnType = signature.output?.returnType.genericSubstitution(genericParameterClause?.genericParameterList) ?? "Void"
-    return SignatureStandin(isInstance: isInstance, identifier: identifier.text, parameters: parameters, returnType: returnType)
+    let returnType = signature.returnClause?.type.genericSubstitution(genericParameterClause?.parameters) ?? "Void"
+    return SignatureStandin(isInstance: isInstance, identifier: name.text, parameters: parameters, returnType: returnType)
   }
   
   internal func isEquivalent(to other: FunctionDeclSyntax) -> Bool {
@@ -164,7 +157,7 @@ extension DeclGroupSyntax {
   
   internal func hasMemberFunction(equvalentTo other: FunctionDeclSyntax) -> Bool {
     for member in memberBlock.members {
-      if let function = member.as(MemberDeclListItemSyntax.self)?.decl.as(FunctionDeclSyntax.self) {
+      if let function = member.as(MemberBlockItemSyntax.self)?.decl.as(FunctionDeclSyntax.self) {
         if function.isEquivalent(to: other) {
           return true
         }
@@ -175,7 +168,7 @@ extension DeclGroupSyntax {
   
   internal func hasMemberProperty(equivalentTo other: VariableDeclSyntax) -> Bool {
     for member in memberBlock.members {
-      if let variable = member.as(MemberDeclListItemSyntax.self)?.decl.as(VariableDeclSyntax.self) {
+      if let variable = member.as(MemberBlockItemSyntax.self)?.decl.as(VariableDeclSyntax.self) {
         if variable.isEquivalent(to: other) {
           return true
         }

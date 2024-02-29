@@ -51,16 +51,16 @@ final class COWMacroCustomStorageTests: XCTestCase {
       }
       """,
       expandedSource:
-      // FIXME: Foo.Bar shall conform CopyOnWriteStorage
       """
       
       struct Foo: Equatable {
+        
         struct Bar: Equatable {
-      
+          
           var value: String
-      
+          
         }
-      
+        
         var value: String {
           get {
             return _$storage.value
@@ -71,10 +71,14 @@ final class COWMacroCustomStorageTests: XCTestCase {
         }
         @COW._Box
         var _$storage: Bar
+
         init(value: String) {
           self._$storage = Bar(value: value)
         }
-      
+        
+      }
+
+      extension Bar: COW.CopyOnWriteStorage {
       }
       """,
       macros: testedMacros,

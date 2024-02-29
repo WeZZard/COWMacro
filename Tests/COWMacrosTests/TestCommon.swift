@@ -55,7 +55,7 @@ internal func assertMacroDiagnostics(
     )
   } else {
     for (actualDiag, expectedDiag) in zip(context.diagnostics, diagnostics) {
-      assertDiagnostic(actualDiag, in: origSourceFile, expected: expectedDiag)
+      assertDiagnostic(actualDiag, in: context, expected: expectedDiag)
     }
   }
 }

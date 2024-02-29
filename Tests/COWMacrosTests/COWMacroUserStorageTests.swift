@@ -36,19 +36,20 @@ final class COWMacroUserStorageTests: XCTestCase {
       """
       struct WithStorageType {
         struct Storage {
-            var value : Int
-      
+
+          var value : Int
+        
         }
-      
+        
         var value: Int {
-            _read {
-              yield _$storage.value
-            }
-            _modify {
-              yield &_$storage.value
-            }
+          _read {
+            yield _$storage.value
+          }
+          _modify {
+            yield &_$storage.value
+          }
         }
-      
+        
         init(value: Int) {
           self._$storage = Storage(value: value)
           self.value = value
@@ -56,8 +57,12 @@ final class COWMacroUserStorageTests: XCTestCase {
         @COW._Box
         var _$storage: Storage
       }
+
+      extension Storage: COW.CopyOnWriteStorage {
+      }
       """,
-      macros: testedMacros
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
     )
   }
   
