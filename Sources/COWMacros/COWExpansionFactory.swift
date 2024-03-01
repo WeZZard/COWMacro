@@ -427,6 +427,22 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       guard case .expr(let expr) = eachStmt.item else {
         continue
       }
+      
+      // Don't check initializers with a forward call to another init.
+      if let callExpr = expr.as(FunctionCallExprSyntax.self) {
+        guard let memberAccessExpr = callExpr.calledExpression.as(MemberAccessExprSyntax.self) else {
+          continue
+        }
+        guard let selfExpr = memberAccessExpr.base?.as(DeclReferenceExprSyntax.self),
+              selfExpr.baseName.tokenKind == .keyword(.`self`) else {
+          continue
+        }
+        guard memberAccessExpr.declName.baseName.tokenKind == .keyword(.`init`) else {
+          continue
+        }
+        return
+      }
+      
       guard let seqExpr = expr.as(SequenceExprSyntax.self) else {
         continue
       }

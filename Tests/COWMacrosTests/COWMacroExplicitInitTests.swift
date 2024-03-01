@@ -31,6 +31,8 @@ final class COWMacroExplicitInitTests: XCTestCase {
   ///   - Diasnose an error that the explicit initializers in the applied
   ///     struct should call the static make storage method before
   ///     initializing properties.
+  ///   - Do not diagnose on the initializers which forwards the call to
+  ///     another initializer.
   ///
   /// The original struct:
   ///
@@ -41,6 +43,10 @@ final class COWMacroExplicitInitTests: XCTestCase {
   ///
   ///   init(value: Int) {
   ///     self.value = value
+  ///   }
+  ///
+  ///   init() {
+  ///     self.init(value: 1)
   ///   }
   ///
   /// }
@@ -57,6 +63,11 @@ final class COWMacroExplicitInitTests: XCTestCase {
         init(value: Int) {
           self.value = value
         }
+      
+        init() {
+          self.init(value: 1)
+        }
+      
       }
       """,
       expandedSource:
@@ -76,6 +87,11 @@ final class COWMacroExplicitInitTests: XCTestCase {
         init(value: Int) {
           self.value = value
         }
+      
+        init() {
+          self.init(value: 1)
+        }
+      
       }
       """,
       diagnostics: [
