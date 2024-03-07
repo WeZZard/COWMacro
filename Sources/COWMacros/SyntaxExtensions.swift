@@ -352,6 +352,23 @@ extension InitializerDeclSyntax {
     var returnType: String
   }
   
+  /// Checks if the initializer is a convenient initializer.
+  ///
+  internal var isConvenient: Bool {
+    guard let body else {
+      return false
+    }
+    // Recursively checks the contents in the body of the initializer. Once
+    // a call to `self.init` has been found, the initializer then get confirmed
+    // as a convenient initialzier.
+    //
+    // Swift's grammar ensures that the initializer can only be convenient or
+    // designated. Developers cannot implement an initializer that conditionally
+    // be both of them. Thus, once a `init`-forward has been found, the
+    // initialzier can be confirmed as a convenient one.
+    return body.doesContributeToConvenientInit
+  }
+  
   internal var signatureStandin: SignatureStandin {
     var parameters = [String]()
     for parameter in signature.parameterClause.parameters {
@@ -363,6 +380,243 @@ extension InitializerDeclSyntax {
   
   internal func isEquivalent(to other: InitializerDeclSyntax) -> Bool {
     return signatureStandin == other.signatureStandin
+  }
+  
+}
+
+extension CodeBlockSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if statements.doesContributeToConvenientInit {
+      return true
+    }
+    return false
+  }
+  
+}
+
+extension CodeBlockItemListSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    for eachStmt in self {
+      switch eachStmt.item {
+      case .expr(let expr):
+        if expr.doesContributeToConvenientInit {
+          return true
+        }
+      case .stmt(let stmt):
+        if stmt.doesContributeToConvenientInit {
+          return true
+        }
+      case .decl(let decl):
+        if decl.doesContributeToConvenientInit {
+          return true
+        }
+      }
+    }
+    return false
+  }
+  
+}
+
+extension MemberBlockItemListSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    for eachItem in self {
+      if eachItem.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    return false
+  }
+  
+}
+
+extension MemberBlockItemSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    return decl.doesContributeToConvenientInit
+  }
+  
+}
+
+extension StmtSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if let guardStmt = self.as(GuardStmtSyntax.self) {
+      if guardStmt.body.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    if let exprStmt = self.as(ExpressionStmtSyntax.self) {
+      if exprStmt.expression.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    return false
+  }
+  
+}
+
+extension ExprSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if let callExpr = self.as(FunctionCallExprSyntax.self) {
+      if callExpr.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    
+    if let ifExpr = self.as(IfExprSyntax.self) {
+      if ifExpr.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    
+    if let switchExpr = self.as(SwitchExprSyntax.self) {
+      if switchExpr.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    
+    return false
+  }
+}
+
+extension DeclSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if let ifConfigDecl = self.as(IfConfigDeclSyntax.self) {
+      if ifConfigDecl.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    
+    return false
+  }
+}
+
+extension FunctionCallExprSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if let memberAccessExpr = calledExpression.as(MemberAccessExprSyntax.self),
+       let selfExpr = memberAccessExpr.base?.as(DeclReferenceExprSyntax.self),
+       selfExpr.baseName.tokenKind == .keyword(.`self`),
+       memberAccessExpr.declName.baseName.tokenKind == .keyword(.`init`)
+    {
+      return true
+    }
+    return false
+  }
+  
+}
+
+extension IfExprSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if body.doesContributeToConvenientInit {
+      return true
+    }
+    switch elseBody {
+    case .codeBlock(let codeBlock):
+      if codeBlock.doesContributeToConvenientInit {
+        return true
+      }
+    case .ifExpr(let ifExpr):
+      if ifExpr.doesContributeToConvenientInit {
+        return true
+      }
+    case .none:
+      break;
+    }
+    return false
+  }
+  
+}
+
+extension IfConfigDeclSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    for eachClause in clauses {
+      if eachClause.doesContributeToConvenientInit {
+        return true
+      }
+    }
+    return false
+  }
+  
+}
+
+extension IfConfigClauseSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    guard let elements else {
+      return false
+    }
+    
+    switch elements {
+    case .attributes:
+      break
+    case .decls(let decls):
+      if decls.doesContributeToConvenientInit {
+        return true
+      }
+    case .statements(let stmts):
+      if stmts.doesContributeToConvenientInit {
+        return true
+      }
+    case .switchCases(let cases):
+      if cases.doesContributeToConvenientInit {
+        return true
+      }
+    case .postfixExpression(let expr):
+      if expr.doesContributeToConvenientInit {
+        return true
+      }
+      break
+    }
+    
+    return false
+  }
+  
+}
+
+extension SwitchExprSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if cases.doesContributeToConvenientInit {
+      return true
+    }
+    return false
+  }
+  
+}
+
+extension SwitchCaseListSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    for eachCase in self {
+      switch eachCase {
+      case .ifConfigDecl:
+        break
+      case .switchCase(let switchCase):
+        if switchCase.doesContributeToConvenientInit {
+          return true
+        }
+      }
+    }
+    return false
+  }
+  
+}
+
+extension SwitchCaseSyntax {
+  
+  internal var doesContributeToConvenientInit: Bool {
+    if statements.doesContributeToConvenientInit {
+      return true
+    }
+    return false
   }
   
 }

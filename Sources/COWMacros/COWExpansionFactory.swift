@@ -420,6 +420,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     storageTypeName: TokenSyntax,
     parameters: [FunctionParameterSyntax]
   ) {
+    // Do not check convenient initializers.
+    guard !initializer.isConvenient else {
+      return
+    }
     guard let body = initializer.body else {
       return
     }
@@ -427,6 +431,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       guard case .expr(let expr) = eachStmt.item else {
         continue
       }
+      
       guard let seqExpr = expr.as(SequenceExprSyntax.self) else {
         continue
       }

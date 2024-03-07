@@ -21,3 +21,26 @@ struct Bar {
   var foo: Int = 0
   
 }
+
+
+struct Fee {
+
+  var value: Int
+
+  init(value: Int) {
+    self.value = value
+  }
+
+  init(value2 value: Int) {
+    self.value = value
+  }
+
+  init() {
+    guard true else {
+      self.init(value: 1)
+      return
+    }
+    self.init(value2: 1)
+  }
+
+}
