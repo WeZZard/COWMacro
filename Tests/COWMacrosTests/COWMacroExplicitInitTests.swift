@@ -31,6 +31,77 @@ final class COWMacroExplicitInitTests: XCTestCase {
   ///   - Diasnose an error that the explicit initializers in the applied
   ///     struct should call the static make storage method before
   ///     initializing properties.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   var value: Int
+  ///
+  ///   init(value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  /// }
+  /// ```
+  ///
+  func testExplicitInits1() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        var value: Int
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        var value: Int {
+          _read {
+            yield _$storage.value
+          }
+          _modify {
+            yield &_$storage.value
+          }
+        }
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+      }
+      """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+      ],
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// (
+  ///   struct
+  ///     explicit initializers
+  /// )
+  ///
+  /// When struct has explicit initializers and has no custom storage, the
+  /// macro should be expanded to:
   ///   - Do not diagnose on the initializers which forwards the call to
   ///     another initializer.
   ///
@@ -52,7 +123,7 @@ final class COWMacroExplicitInitTests: XCTestCase {
   /// }
   /// ```
   ///
-  func testExplicitInits1() {
+  func testExplicitInitWithSimpleConvenientInit() {
     assertMacroExpansion(
       """
       @COW
@@ -98,6 +169,357 @@ final class COWMacroExplicitInitTests: XCTestCase {
         DiagnosticSpec(
           message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
           line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+      ],
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// (
+  ///   struct
+  ///     explicit initializers
+  /// )
+  ///
+  /// When struct has explicit initializers and has no custom storage, the
+  /// macro should be expanded to:
+  ///   - Do not diagnose on the initializers which forwards the call to
+  ///     another initializer.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   var value: Int
+  ///
+  ///   init(value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init(value2 value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init() {
+  ///     if true {
+  ///       self.init(value: 1)
+  ///     } else {
+  ///       self.init(value2: 1)
+  ///     }
+  ///   }
+  ///
+  /// }
+  /// ```
+  ///
+  func testExplicitInitWithIfElseWrappedConvenientInit() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        var value: Int
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          if true {
+            self.init(value: 1)
+          } else {
+            self.init(value2: 1)
+          }
+        }
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        var value: Int {
+          _read {
+            yield _$storage.value
+          }
+          _modify {
+            yield &_$storage.value
+          }
+        }
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          if true {
+            self.init(value: 1)
+          } else {
+            self.init(value2: 1)
+          }
+        }
+      
+      }
+      """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 10,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+      ],
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// (
+  ///   struct
+  ///     explicit initializers
+  /// )
+  ///
+  /// When struct has explicit initializers and has no custom storage, the
+  /// macro should be expanded to:
+  ///   - Do not diagnose on the initializers which forwards the call to
+  ///     another initializer.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   var value: Int
+  ///
+  ///   init(value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init(value2 value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init() {
+  ///     #if MY_CONDITION
+  ///       self.init(value: 1)
+  ///     #else
+  ///       self.init(value2: 1)
+  ///     #endif
+  ///   }
+  ///
+  /// }
+  /// ```
+  ///
+  func testExplicitInitWithCompliationConditionWrappedConvenientInit() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        var value: Int
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          #if MY_CONDITION
+            self.init(value: 1)
+          #else
+            self.init(value2: 1)
+          #endif
+        }
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        var value: Int {
+          _read {
+            yield _$storage.value
+          }
+          _modify {
+            yield &_$storage.value
+          }
+        }
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          #if MY_CONDITION
+            self.init(value: 1)
+          #else
+            self.init(value2: 1)
+          #endif
+        }
+      
+      }
+      """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 10,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+      ],
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
+  
+  /// (
+  ///   struct
+  ///     explicit initializers
+  /// )
+  ///
+  /// When struct has explicit initializers and has no custom storage, the
+  /// macro should be expanded to:
+  ///   - Do not diagnose on the initializers which forwards the call to
+  ///     another initializer.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   var value: Int
+  ///
+  ///   init(value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init(value2 value: Int) {
+  ///     self.value = value
+  ///   }
+  ///
+  ///   init() {
+  ///     guard true else {
+  ///       self.init(value: 1)
+  ///       return
+  ///     }
+  ///     self.init(value2: 1)
+  ///   }
+  ///
+  /// }
+  /// ```
+  ///
+  func testExplicitInitWithGuardConditionWrappedConvenientInit() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        var value: Int
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          guard true else {
+            self.init(value: 1)
+            return
+          }
+          self.init(value2: 1)
+        }
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+      
+        var value: Int {
+          _read {
+            yield _$storage.value
+          }
+          _modify {
+            yield &_$storage.value
+          }
+        }
+      
+        init(value: Int) {
+          self.value = value
+        }
+      
+        init(value2 value: Int) {
+          self.value = value
+        }
+      
+        init() {
+          guard true else {
+            self.init(value: 1)
+            return
+          }
+          self.init(value2: 1)
+        }
+      
+      }
+      """,
+      diagnostics: [
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 6,
+          column: 3,
+          fixIts: [
+            FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
+          ]
+        ),
+        DiagnosticSpec(
+          message: "@COW macro requires you to initialize the copy-on-write storage before initializing the properties.",
+          line: 10,
           column: 3,
           fixIts: [
             FixItSpec(message: "Initializes copy-on-write storage to make the @COW macro work.")
