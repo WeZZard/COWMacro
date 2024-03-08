@@ -249,57 +249,6 @@ final class COWMacroOLoCTests: XCTestCase {
     )
   }
   
-  /// Does not break the behavior of auto synthesizing protocols.
-  ///
-  /// `Hashable`, `Codeable` shall also work.
-  ///
-  /// The original struct:
-  ///
-  /// ```
-  /// struct Foo: Equatable {
-  ///
-  ///   var value: Int = 0
-  ///
-  /// }
-  /// ```
-  ///
-  func testStructWithPropertyAndConformsToAutoSynthesizingProtocols() {
-    assertMacroExpansion(
-      """
-      @COW
-      struct Foo: Equatable {
-      
-        var value: Int = 0
-      
-      }
-      """,
-      expandedSource:
-      """
-      
-      struct Foo: Equatable {
-
-        var value: Int = 0 {
-          _read {
-            yield _$storage.value
-          }
-          _modify {
-            yield &_$storage.value
-          }
-        }
-
-        struct _$COWStorage: COW.CopyOnWriteStorage, Equatable {
-          var value: Int = 0
-        }
-        @COW._Box
-        var _$storage: _$COWStorage = _$COWStorage()
-
-      }
-      """,
-      macros: testedMacros,
-      indentationWidth: .spaces(2)
-    )
-  }
-  
   /// Do not expand on static properties.
   ///
   /// The original struct:

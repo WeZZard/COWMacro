@@ -315,6 +315,35 @@ final class COWTests: XCTestCase {
     XCTAssertEqual(fee, foe)
   }
   
+  struct NotConformingToHashable {}
+  
+  @COW
+  struct ManuallyConformedEquatableStruct: Hashable {
+    
+    var value: Int = 0
+    var wrappedValue: Int { value }
+    let foo = NotConformingToHashable()
+    
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(value)
+    }
+    
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      return lhs.wrappedValue == rhs.wrappedValue
+    }
+    
+  }
+  
+  func testManuallyConformedEquatableStruct() {
+    var fee = ManuallyConformedEquatableStruct()
+    let foe = fee
+    XCTAssertEqual(fee, foe)
+    fee.value = 100
+    XCTAssertNotEqual(fee, foe)
+    fee.value = 0
+    XCTAssertEqual(fee, foe)
+  }
+  
   @COW
   struct CodableStruct: Codable {
     
@@ -331,6 +360,37 @@ final class COWTests: XCTestCase {
       let decoder = JSONDecoder()
       let codededFee = try decoder.decode(CodableStruct.self, from: data)
       XCTAssertEqual(fee.value, codededFee.value)
+    } catch _ {
+      XCTFail()
+    }
+  }
+  
+  @COW
+  struct CodableStructWithCodingKeys: Codable {
+    
+    var foo: Int = 0
+    var bar: Int = 1
+    
+    init() {}
+    
+    enum CodingKeys: String, CodingKey {
+      case foo = "FOO"
+    }
+  }
+  
+  func testCodableStructWithCodingKeys() {
+    var foo = CodableStructWithCodingKeys()
+    foo.foo = 2
+    foo.bar = 3
+    do {
+      let encoder = JSONEncoder()
+      let data = try encoder.encode(foo)
+      let decoder = JSONDecoder()
+      let bar = try decoder.decode(CodableStructWithCodingKeys.self, from: data)
+      XCTAssertEqual(foo.foo, bar.foo)
+      XCTAssertEqual(bar.bar, 1)
+      let dict = try decoder.decode([String: Int].self, from: data)
+      XCTAssertEqual(dict["FOO"], bar.foo)
     } catch _ {
       XCTFail()
     }

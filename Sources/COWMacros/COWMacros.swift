@@ -5,7 +5,8 @@ import SwiftSyntaxMacros
 @_implementationOnly import SwiftSyntaxBuilder
 @_implementationOnly import SwiftDiagnostics
 
-private let defaultStorageName: TokenSyntax = "_$storage"
+let defaultStorageTypeName: TokenSyntax = "_$COWStorage"
+let defaultStorageName: TokenSyntax = "_$storage"
 
 // MARK: - NameLookupable
 
@@ -101,7 +102,8 @@ public struct COWMacro:
       return []
     }
     
-    let storageTypeDecl = factory.getStorageTypeDecl()
+    let storageTypeAndAssociatedMembers = factory.getStorageTypeDecl()
+    let storageTypeDecl = storageTypeAndAssociatedMembers.storageType
     
     let storageName = structDecl.copyOnWriteStorageName ?? defaultStorageName
     
@@ -128,6 +130,9 @@ public struct COWMacro:
     structDecl.addIfNeeded(storageMemberDecl, to: &expansions)
     if let explicitInitializerDecl {
       structDecl.addIfNeeded(explicitInitializerDecl, to: &expansions)
+    }
+    storageTypeAndAssociatedMembers.additionalMembers?.forEach {
+      structDecl.addIfNeeded($0, to: &expansions)
     }
     
     return expansions
