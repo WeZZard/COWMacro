@@ -102,9 +102,14 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
   }
   
-  internal func getStorageTypeDecl() -> StructDeclSyntax {
+  typealias StorageTypeAndAssociatedMembers = (
+    storageType: StructDeclSyntax,
+    additionalMembers: [DeclSyntax]?
+  )
+  
+  internal func getStorageTypeDecl() -> StorageTypeAndAssociatedMembers {
     if let userStorageTypeDecl {
-      return userStorageTypeDecl
+      return (userStorageTypeDecl, nil)
     }
     
     return createDerivedStorageTypeDecl()
@@ -218,11 +223,176 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   
   // MARK: Utilities
   
-  private func createDerivedStorageTypeDecl() -> StructDeclSyntax {
-    let members = appliedStructValidVarDecls.map {
-      MemberBlockItemSyntax(decl: $0)
+  // If `appliedStructDecl` conforms to Equatable and manually implements `==`,
+  // the derived storage must also conform to Equatable (otherwise we hit a
+  // compiler bug that breaks the build).
+  // https://forums.swift.org/t/macro-multiple-matching-functions-xyz-error-though-the-expanded-code-has-no-duplicate-functions-and-compiles/68700/4
+  // FIXME: remove the workaround when the compiler bug is fixed.
+  private func applyEquatableWorkaroundForDerivedStorage(
+    members: inout [MemberBlockItemSyntax],
+    protocols: inout [InheritedTypeSyntax]
+  ) {
+    // Bail out if derived storage doesn't conform to Equatable.
+    guard protocols.contains(where: {
+      guard let name = $0.type.identifier else {
+        return false
+      }
+      return equatableProtocolNames.contains(name) ||
+             hashableProtocolNames.contains(name)
+    }) else {
+      return
     }
     
+    // Bail out if `appliedStructDecl` does not manually implement `==`.
+    guard let nestingEqualFunc = appliedStructDecl.memberBlock.members
+      .lazy
+      .map(\.decl)
+      .compactMap({$0.as(FunctionDeclSyntax.self)})
+      .first(where: {$0.likelyToConformToEquatable(for: appliedStructDecl)}) else {
+      return
+    }
+    
+    // Another compiler bug another workaround.
+    // The compiler doesn't call the manually-implemented `==` in `appliedStructDecl`;
+    // it will synthesize one for the derived storage and call it instead.
+    // Expand an `==` that is an exact copy (except for the signature) of
+    // `appliedStructDecl` to make sure the program behavior is correct.
+    
+    // In order to make this workaround work with computed properties and
+    // immutable functions with return values, we also have to copy them into
+    // the derived storage.
+    appliedStructDecl.memberBlock.members
+      .lazy
+      .map(\.decl)
+      .compactMap { $0.as(VariableDeclSyntax.self) }
+      .filter { !$0.isStatic && !$0.isStored }
+      .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
+    appliedStructDecl.memberBlock.members
+      .lazy
+      .map(\.decl)
+      .compactMap { $0.as(FunctionDeclSyntax.self) }
+      .filter { !$0.isStatic && !$0.isMutating && !$0.returnTypeEquals(to: "Void") }
+      .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
+    
+    guard let body = nestingEqualFunc.as(FunctionDeclSyntax.self)!.body else {
+      // Could this ever happen (i.e. a function declaration without
+      // implementation in struct is invalid)?
+      fatalError()
+    }
+    // Use signature from proxy protocol if needed. See the comments below
+    // (why we are adding a proxy protocol) for the reason.
+    #if swift(<5.9.2)
+    let nestedEqualFuncSignature: SyntaxNodeString = "static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool"
+    #else
+    let nestedEqualFuncSignature: SyntaxNodeString = "static func == (lhs: Self, rhs: Self) -> Bool"
+    #endif
+    let nestedEqualFunc = try! FunctionDeclSyntax(nestedEqualFuncSignature) {
+      body.statements
+    }
+    members.append(MemberBlockItemSyntax(decl: nestedEqualFunc))
+    
+    // Yet another compiler bug and another workaround :)
+    // https://github.com/apple/swift/issues/66348
+    // The compiler does not recognize expanded `==` as a conformance which is
+    // fixed in Swift 5.9.2.
+    // For clients still using older compilers, work around by conforming a
+    // proxy protocol. Idea credits to
+    // https://github.com/JosephDuffy/HashableMacro/commit/250787664a63ceff83c1c9b5e30e574ada568f2f.
+    #if swift(<5.9.2)
+    let equalsProxyProtocol: TypeSyntax = "COW.COWStorageEquatableWorkaround"
+    protocols.append(InheritedTypeSyntax(type: equalsProxyProtocol))
+    #endif
+  }
+  
+  private func forwardCodingKeysForDerivedStorage(
+    members: inout [MemberBlockItemSyntax],
+    protocols: inout [InheritedTypeSyntax],
+    associatedMembers: inout [DeclSyntax]
+  ) {
+    // Bail out early if `appliedStructDecl` does not declare CodingKeys.
+    guard appliedStructDecl.memberBlock.members.contains(where: {
+      if let enumDecl = $0.decl.as(EnumDeclSyntax.self),
+         enumDecl.name.trimmed.text == "CodingKeys",
+         let inheritedTypes = enumDecl.inheritanceClause?.inheritedTypes,
+         inheritedTypes.containsType(named: "CodingKey") {
+        return true
+      }
+      // We have no way to check the aliased type, so just make a guess (that
+      // it is indeed a CodingKeys enum).
+      if let typealiasDecl = $0.decl.as(TypeAliasDeclSyntax.self),
+         typealiasDecl.name.trimmed.text == "CodingKeys" {
+        return true
+      }
+      return false
+    }) else {
+      return
+    }
+    
+    // Bail out early if we are not conforming to anything Codable related.
+    let conformingToCodable = protocols.contains(where: {
+      guard let name = $0.type.identifier else {
+        return false
+      }
+      return codableProtocolNames.contains(name)
+    })
+    let conformingToEncodable = conformingToCodable || protocols.contains(where: {
+      guard let name = $0.type.identifier else {
+        return false
+      }
+      return encodableProtocolNames.contains(name)
+    })
+    let conformingToDecodable = conformingToCodable || protocols.contains(where: {
+      guard let name = $0.type.identifier else {
+        return false
+      }
+      return decodableProtocolNames.contains(name)
+    })
+    guard conformingToCodable ||
+          conformingToEncodable ||
+          conformingToDecodable else {
+      return
+    }
+    
+    // Make a typealias in the derived storage pointing to the CodingKeys in
+    // `appliedStructDecl` which allow the compiler to synthesize the actual
+    // coding functions.
+    let typealiasDecl: DeclSyntax = """
+    typealias CodingKeys = \(appliedStructDecl.name).CodingKeys
+    """
+    members.append(MemberBlockItemSyntax(decl: typealiasDecl))
+    
+    // Expand coding functions in `appliedStructDecl`, forwarding the
+    // invocation to the derived storage.
+    if conformingToEncodable {
+      let encodeForwarder: DeclSyntax = """
+      func encode(to encoder: any Encoder) throws {
+        try \(defaultStorageName).encode(to: encoder)
+      }
+      """
+      associatedMembers.append(encodeForwarder)
+    }
+    if conformingToDecodable {
+      let decodeForwarder: DeclSyntax = """
+      init(from decoder: any Decoder) throws {
+        self.\(defaultStorageName) = try \(defaultStorageTypeName)(from: decoder)
+      }
+      """
+      associatedMembers.append(decodeForwarder)
+    }
+  }
+  
+  private func createDerivedStorageTypeDecl() -> StorageTypeAndAssociatedMembers {
+    var members = appliedStructValidVarDecls.map {
+      return MemberBlockItemSyntax(decl: $0)
+    }
+    
+    var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
+    applyEquatableWorkaroundForDerivedStorage(members: &members, protocols: &protocols)
+    
+    var associatedMembers = [DeclSyntax]()
+    forwardCodingKeysForDerivedStorage(members: &members,
+                                       protocols: &protocols,
+                                       associatedMembers: &associatedMembers)
     
     let inheritance = InheritanceClauseSyntax {
       InheritedTypeListSyntax {
@@ -230,18 +400,19 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       }
       // Equatable, Hashable, Codeable
       InheritedTypeListSyntax(
-        appliedStructDecl.collectAutoSynthesizingProtocolConformance()
+        protocols
       )
     }
     
-    let typeName: TokenSyntax = "_$COWStorage"
-    
-    return StructDeclSyntax(
-      name: typeName,
-      inheritanceClause: inheritance
-    ) {
-      MemberBlockItemListSyntax(members)
-    }
+    return (
+      StructDeclSyntax(
+        name: defaultStorageTypeName,
+        inheritanceClause: inheritance
+      ) {
+        MemberBlockItemListSyntax(members)
+      },
+      associatedMembers
+    )
   }
   
   private func collectExplicitInitParameters(

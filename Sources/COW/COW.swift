@@ -248,3 +248,17 @@ extension _Box: Codable where Contents: Codable {
   }
   
 }
+
+// Idea of workaround credits to 
+// https://github.com/JosephDuffy/HashableMacro/commit/250787664a63ceff83c1c9b5e30e574ada568f2f.
+#if swift(<5.9.2)
+public protocol COWStorageEquatableWorkaround {
+  static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool
+}
+
+public extension Equatable where Self: COWStorageEquatableWorkaround {
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    equalsWorkaround(lhs: lhs, rhs: rhs)
+  }
+}
+#endif
