@@ -121,6 +121,7 @@ extension StructDeclSyntax {
 
 extension FunctionSignatureSyntax {
   
+  // TODO: Review it
   var hasThrows: Bool {
     effectSpecifiers?.throwsSpecifier?.tokenKind == .keyword(.`throws`)
   }
@@ -154,7 +155,8 @@ extension FunctionDeclSyntax {
   
   // Equatable:
   // static func == (lhs: Self, rhs: Self) -> Bool
-  func likelyToConformToEquatable(for structDecl: StructDeclSyntax) -> Bool {
+  // FIXME: Better naming. lhs and rhs is compiler generated version
+  func isCompilerGeneratorEquatableFunction(for structDecl: StructDeclSyntax) -> Bool {
     guard isStatic else {
       return false
     }
@@ -497,7 +499,7 @@ extension InitializerDeclSyntax {
   
   // Decodable:
   // init(from decoder: any Decoder) throws
-  var likelyToConformToDecodable: Bool {
+  internal var likelyToConformToDecodable: Bool {
     guard signature.hasThrows else {
       return false
     }
@@ -822,6 +824,7 @@ extension DeclGroupSyntax {
       return []
     }
     
+    // REVIEW: Encapsulate the following detection into a standalone function to improve readability of this function.
     var hasHashableImpl = false
     var hasEquatableImpl = false
     var hasEncodableImpl = false
@@ -838,7 +841,7 @@ extension DeclGroupSyntax {
       if !hasEquatableImpl || !hasHashableImpl || !hasEncodableImpl,
          let functionDecl = member.decl.as(FunctionDeclSyntax.self) {
         if !hasEquatableImpl {
-          hasEquatableImpl = functionDecl.likelyToConformToEquatable(for: structDecl)
+          hasEquatableImpl = functionDecl.isCompilerGeneratorEquatableFunction(for: structDecl)
           if hasEquatableImpl {
             continue
           }
@@ -864,6 +867,7 @@ extension DeclGroupSyntax {
     // Only conform to the protocols if custom implementation is absent.
     var protocolsToConform = autoSynthesizingProtocolTypes
     
+    // REVIEW: Use set algebra instead of O(N*M) search?
     if hashableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
       if hasHashableImpl {
         protocolsToConform.subtract(hashableProtocolNames)
@@ -902,6 +906,7 @@ extension DeclGroupSyntax {
     if hasEncodableImpl || hasDecodableImpl {
       protocolsToConform.subtract(codableProtocolNames)
     }
+    // REVIEW: Use set algebra instead of O(N*M) search?
     if codableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
       // Codable implies Encodable & Decodable.
       if hasDecodableImpl, !hasEncodableImpl {
@@ -923,10 +928,12 @@ extension DeclGroupSyntax {
       }
     } else {
       if hasEncodableImpl,
+         // REVIEW: Use set algebra instead of O(N*M) search?
          encodableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
         protocolsToConform.subtract(encodableProtocolNames)
       }
       if hasDecodableImpl,
+         // REVIEW: Use set algebra instead of O(N*M) search?
          decodableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
         protocolsToConform.subtract(decodableProtocolNames)
       }
@@ -1086,6 +1093,35 @@ extension Sequence {
     return allSatisfy { element in
       element[keyPath: keyPath]
     }
+  }
+  
+}
+
+extension StructDeclSyntax {
+  
+  internal var hasSubtypeCodingKeys: Bool {
+    memberBlock.members.contains(where: \.isCodingKeys)
+  }
+  
+}
+
+extension MemberBlockItemSyntax {
+  
+  internal var isCodingKeys: Bool {
+    if let enumDecl = decl.as(EnumDeclSyntax.self),
+       enumDecl.name.trimmed.text == "CodingKeys",
+       let inheritedTypes = enumDecl.inheritanceClause?.inheritedTypes,
+       // FIXME: (s) is missing after CodkingKey?
+       inheritedTypes.containsType(named: "CodingKey") {
+      return true
+    }
+    // We have no way to check the aliased type, so just make a guess (that
+    // it is indeed a CodingKeys enum).
+    if let typealiasDecl = decl.as(TypeAliasDeclSyntax.self),
+       typealiasDecl.name.trimmed.text == "CodingKeys" {
+      return true
+    }
+    return false
   }
   
 }

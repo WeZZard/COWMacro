@@ -102,10 +102,10 @@ public struct COWMacro:
       return []
     }
     
-    let storageTypeAndAssociatedMembers = factory.getStorageTypeDecl()
-    let storageTypeDecl = storageTypeAndAssociatedMembers.storageType
-    
     let storageName = structDecl.copyOnWriteStorageName ?? defaultStorageName
+    
+    let (storageType, additionalMembers) = factory.getStorageTypeDecl(storageName: storageName)
+    let storageTypeDecl = storageType
     
     // Create storage member
     let storageMemberDecl = factory.createStorageVarDecl(
@@ -131,7 +131,7 @@ public struct COWMacro:
     if let explicitInitializerDecl {
       structDecl.addIfNeeded(explicitInitializerDecl, to: &expansions)
     }
-    storageTypeAndAssociatedMembers.additionalMembers?.forEach {
+    additionalMembers?.forEach {
       structDecl.addIfNeeded($0, to: &expansions)
     }
     
