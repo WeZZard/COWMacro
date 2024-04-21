@@ -228,7 +228,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   // compiler bug that breaks the build).
   // https://forums.swift.org/t/macro-multiple-matching-functions-xyz-error-though-the-expanded-code-has-no-duplicate-functions-and-compiles/68700/4
   // FIXME: remove the workaround when the compiler bug is fixed.
-  private func applyEquatableWorkaroundForDerivedStorage(
+  private func applyEquatableWorkaroundIfNeeded(
     members: inout [MemberBlockItemSyntax],
     protocols: inout [InheritedTypeSyntax]
   ) {
@@ -387,7 +387,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
     
     var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
-    applyEquatableWorkaroundForDerivedStorage(members: &members, protocols: &protocols)
+    applyEquatableWorkaroundIfNeeded(members: &members, protocols: &protocols)
     
     var associatedMembers = [DeclSyntax]()
     forwardCodingKeysForDerivedStorage(members: &members,
