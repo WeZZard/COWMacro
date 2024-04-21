@@ -274,7 +274,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       .filter { !$0.isStatic && !$0.isMutating && !$0.returnTypeEquals(to: "Void") }
       .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
     
-    guard let body = nestingEqualFunc.as(FunctionDeclSyntax.self)!.body else {
+    guard let body = nestingEqualFunc.body else {
       // Could this ever happen (i.e. a function declaration without
       // implementation in struct is invalid)?
       fatalError()
