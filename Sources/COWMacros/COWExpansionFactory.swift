@@ -304,7 +304,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     #endif
   }
   
-  private func forwardCodingKeysForDerivedStorage(
+  private func forwardCodingKeysForDerivedStorageIfNeeded(
     members: inout [MemberBlockItemSyntax],
     protocols: inout [InheritedTypeSyntax],
     associatedMembers: inout [DeclSyntax]
@@ -390,9 +390,11 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     applyEquatableWorkaroundIfNeeded(members: &members, protocols: &protocols)
     
     var associatedMembers = [DeclSyntax]()
-    forwardCodingKeysForDerivedStorage(members: &members,
-                                       protocols: &protocols,
-                                       associatedMembers: &associatedMembers)
+    forwardCodingKeysForDerivedStorageIfNeeded(
+        members: &members,
+        protocols: &protocols,
+        associatedMembers: &associatedMembers
+    )
     
     let inheritance = InheritanceClauseSyntax {
       InheritedTypeListSyntax {
