@@ -274,22 +274,11 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       .filter { !$0.isStatic && !$0.isMutating && !$0.returnTypeEquals(to: "Void") }
       .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
     
-    guard let body = nestingEqualFunc.body else {
-      // Could this ever happen (i.e. a function declaration without
-      // implementation in struct is invalid)?
-      fatalError()
-    }
-    // Use signature from proxy protocol if needed. See the comments below
-    // (why we are adding a proxy protocol) for the reason.
-    #if swift(<5.9.2)
-    let nestedEqualFuncSignature: SyntaxNodeString = "static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool"
-    #else
-    let nestedEqualFuncSignature: SyntaxNodeString = "static func == (lhs: Self, rhs: Self) -> Bool"
-    #endif
-    let nestedEqualFunc = try! FunctionDeclSyntax(nestedEqualFuncSignature) {
-      body.statements
-    }
-    members.append(MemberBlockItemSyntax(decl: nestedEqualFunc))
+    members.append(
+      MemberBlockItemSyntax(
+        decl: createEqualForEquatableWorkaround(nestingEqualFunc: nestingEqualFunc)
+      )
+    )
     
     // Yet another compiler bug and another workaround :)
     // https://github.com/apple/swift/issues/66348
@@ -302,6 +291,27 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     let equalsProxyProtocol: TypeSyntax = "COW.COWStorageEquatableWorkaround"
     protocols.append(InheritedTypeSyntax(type: equalsProxyProtocol))
     #endif
+  }
+  
+  private func createEqualForEquatableWorkaround(
+    nestingEqualFunc: FunctionDeclSyntax
+  ) -> FunctionDeclSyntax {
+    // Use signature from proxy protocol if needed. See the comments about why
+    // we are adding a proxy protocol for the reason.
+    #if swift(<5.9.2)
+    let nestedEqualFuncName: TokenSyntax = "equalsWorkaround"
+    #else
+    let nestedEqualFuncName = nestingEqualFunc.name
+    #endif
+    return .init(
+      attributes: nestingEqualFunc.attributes,
+      modifiers: nestingEqualFunc.modifiers,
+      name: nestedEqualFuncName,
+      genericParameterClause: nestingEqualFunc.genericParameterClause,
+      signature: nestingEqualFunc.signature,
+      genericWhereClause: nestingEqualFunc.genericWhereClause,
+      body: nestingEqualFunc.body
+    )
   }
   
   private func forwardCodingKeysForDerivedStorageIfNeeded(
