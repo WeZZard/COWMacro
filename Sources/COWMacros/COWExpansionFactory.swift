@@ -104,7 +104,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   
   typealias StorageTypeAndAssociatedMembers = (
     storageType: StructDeclSyntax,
-    additionalMembers: [DeclSyntax]?
+    additionalMembers: [any DeclSyntaxProtocol]?
   )
   
   internal func getStorageTypeDecl() -> StorageTypeAndAssociatedMembers {
@@ -317,7 +317,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   private func forwardCodingKeysForDerivedStorageIfNeeded(
     members: inout [MemberBlockItemSyntax],
     protocols: inout [InheritedTypeSyntax],
-    associatedMembers: inout [DeclSyntax]
+    associatedMembers: inout [any DeclSyntaxProtocol]
   ) {
     // Bail out early if `appliedStructDecl` does not declare CodingKeys.
     guard appliedStructDecl.memberBlock.members.contains(where: {
@@ -366,27 +366,101 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     // Make a typealias in the derived storage pointing to the CodingKeys in
     // `appliedStructDecl` which allow the compiler to synthesize the actual
     // coding functions.
-    let typealiasDecl: DeclSyntax = """
-    typealias CodingKeys = \(appliedStructDecl.name).CodingKeys
-    """
-    members.append(MemberBlockItemSyntax(decl: typealiasDecl))
+    let typealiasName: TokenSyntax = "CodingKeys"
+    members.append(
+      MemberBlockItemSyntax(
+        decl: TypeAliasDeclSyntax(
+          name: typealiasName,
+          initializer: .init(
+            value: MemberTypeSyntax(
+              baseType: IdentifierTypeSyntax(name: appliedStructDecl.name),
+              name: typealiasName
+            )
+          )
+        )
+      )
+    )
     
     // Expand coding functions in `appliedStructDecl`, forwarding the
     // invocation to the derived storage.
+    let storageName = appliedStructDecl.copyOnWriteStorageName
+        ?? defaultStorageName
+    let throwsEffect = FunctionEffectSpecifiersSyntax.init(
+      throwsSpecifier: "throws"
+    )
     if conformingToEncodable {
-      let encodeForwarder: DeclSyntax = """
-      func encode(to encoder: any Encoder) throws {
-        try \(defaultStorageName).encode(to: encoder)
-      }
-      """
+      let encodeForwarder = FunctionDeclSyntax(
+        name: "encode",
+        signature: .init(
+          parameterClause: .init(parametersBuilder: {
+            .init(
+              firstName: "to",
+              secondName: "encoder",
+              type: SomeOrAnyTypeSyntax(
+                someOrAnySpecifier: .keyword(.`any`),
+                constraint: IdentifierTypeSyntax(name: "Encoder")
+              )
+            )
+          }),
+          effectSpecifiers: throwsEffect
+        ),
+        body: .init(statementsBuilder: {
+          TryExprSyntax(expression: FunctionCallExprSyntax(
+            calledExpression: MemberAccessExprSyntax(
+              base: DeclReferenceExprSyntax(baseName: storageName),
+              declName: DeclReferenceExprSyntax(baseName: "encode")
+            ),
+            leftParen: "(",
+            arguments: .init(itemsBuilder: {
+              .init(
+                label: "to",
+                expression: DeclReferenceExprSyntax(baseName: "encoder")
+              )
+            }),
+            rightParen: ")"
+          ))
+        })
+      )
       associatedMembers.append(encodeForwarder)
     }
     if conformingToDecodable {
-      let decodeForwarder: DeclSyntax = """
-      init(from decoder: any Decoder) throws {
-        self.\(defaultStorageName) = try \(defaultStorageTypeName)(from: decoder)
-      }
-      """
+      let decodeForwarder = InitializerDeclSyntax(
+        signature: .init(
+          parameterClause: .init(parametersBuilder: {
+            .init(
+              firstName: "from",
+              secondName: "decoder",
+              type: SomeOrAnyTypeSyntax(
+                someOrAnySpecifier: .keyword(.`any`),
+                constraint: IdentifierTypeSyntax(name: "Decoder")
+              )
+            )
+          }),
+          effectSpecifiers: throwsEffect
+        ),
+        body: .init(statementsBuilder: {
+          InfixOperatorExprSyntax(
+            leftOperand: MemberAccessExprSyntax(
+              base: DeclReferenceExprSyntax(baseName: .keyword(.`self`)),
+              declName: DeclReferenceExprSyntax(baseName: storageName)
+            ),
+            operator: AssignmentExprSyntax(),
+            rightOperand: TryExprSyntax(expression: FunctionCallExprSyntax(
+              calledExpression: MemberAccessExprSyntax(
+                declName: .init(baseName: .keyword(.`init`))
+              ),
+              leftParen: "(",
+              arguments: .init(itemsBuilder: {
+                .init(
+                  label: "from",
+                  expression: DeclReferenceExprSyntax(baseName: "decoder")
+                )
+              }),
+              rightParen: ")"
+            ))
+          )
+        })
+      )
       associatedMembers.append(decodeForwarder)
     }
   }
@@ -399,7 +473,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
     applyEquatableWorkaroundIfNeeded(members: &members, protocols: &protocols)
     
-    var associatedMembers = [DeclSyntax]()
+    var associatedMembers = [any DeclSyntaxProtocol]()
     forwardCodingKeysForDerivedStorageIfNeeded(
         members: &members,
         protocols: &protocols,
