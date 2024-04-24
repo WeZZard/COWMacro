@@ -230,7 +230,8 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   // FIXME: remove the workaround when the compiler bug is fixed.
   private func applyEquatableWorkaroundIfNeeded(
     members: inout [MemberBlockItemSyntax],
-    protocols: inout [InheritedTypeSyntax]
+    protocols: inout [InheritedTypeSyntax],
+    associatedMembers: inout [any DeclSyntaxProtocol]
   ) {
     // Bail out if derived storage doesn't conform to Equatable.
     guard protocols.contains(where: {
@@ -244,41 +245,13 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
     
     // Bail out if `appliedStructDecl` does not manually implement `==`.
-    guard let nestingEqualFunc = appliedStructDecl.memberBlock.members
+    guard appliedStructDecl.memberBlock.members
       .lazy
       .map(\.decl)
       .compactMap({$0.as(FunctionDeclSyntax.self)})
-      .first(where: {$0.likelyToConformToEquatable(for: appliedStructDecl)}) else {
+      .contains(where: {$0.likelyToConformToEquatable(for: appliedStructDecl)}) else {
       return
     }
-    
-    // Another compiler bug another workaround.
-    // The compiler doesn't call the manually-implemented `==` in `appliedStructDecl`;
-    // it will synthesize one for the derived storage and call it instead.
-    // Expand an `==` that is an exact copy (except for the signature) of
-    // `appliedStructDecl` to make sure the program behavior is correct.
-    
-    // In order to make this workaround work with computed properties and
-    // immutable functions with return values, we also have to copy them into
-    // the derived storage.
-    appliedStructDecl.memberBlock.members
-      .lazy
-      .map(\.decl)
-      .compactMap { $0.as(VariableDeclSyntax.self) }
-      .filter { !$0.isStatic && !$0.isStored }
-      .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
-    appliedStructDecl.memberBlock.members
-      .lazy
-      .map(\.decl)
-      .compactMap { $0.as(FunctionDeclSyntax.self) }
-      .filter { !$0.isStatic && !$0.isMutating && !$0.returnTypeEquals(to: "Void") }
-      .forEach { members.append(MemberBlockItemSyntax(decl: $0)) }
-    
-    members.append(
-      MemberBlockItemSyntax(
-        decl: createEqualForEquatableWorkaround(nestingEqualFunc: nestingEqualFunc)
-      )
-    )
     
     // Yet another compiler bug and another workaround :)
     // https://github.com/apple/swift/issues/66348
@@ -291,27 +264,30 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     let equalsProxyProtocol: TypeSyntax = "COW.COWStorageEquatableWorkaround"
     protocols.append(InheritedTypeSyntax(type: equalsProxyProtocol))
     #endif
-  }
-  
-  private func createEqualForEquatableWorkaround(
-    nestingEqualFunc: FunctionDeclSyntax
-  ) -> FunctionDeclSyntax {
-    // Use signature from proxy protocol if needed. See the comments about why
-    // we are adding a proxy protocol for the reason.
     #if swift(<5.9.2)
-    let nestedEqualFuncName: TokenSyntax = "equalsWorkaround"
+    let nestedEqualFunc: DeclSyntax = """
+    static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool { fatalError() }
+    """
     #else
-    let nestedEqualFuncName = nestingEqualFunc.name
+    let nestedEqualFunc: DeclSyntax = """
+    static func == (lhs: Self, rhs: Self) -> Bool { fatalError() }
+    """
     #endif
-    return .init(
-      attributes: nestingEqualFunc.attributes,
-      modifiers: nestingEqualFunc.modifiers,
-      name: nestedEqualFuncName,
-      genericParameterClause: nestingEqualFunc.genericParameterClause,
-      signature: nestingEqualFunc.signature,
-      genericWhereClause: nestingEqualFunc.genericWhereClause,
-      body: nestingEqualFunc.body
-    )
+    members.append(MemberBlockItemSyntax(decl: nestedEqualFunc))
+    
+    // After applying the above workaround, the compiler would generate bad
+    // protocol witness for Equatable, which resulted in calling the
+    // not-expecting-to-be-called workaround we just expanded for
+    // dynamic-dispatched `==` calls.
+    // By resorting to an underscored attribute we can correct this with
+    // minimal effort.
+    let dynamicDispatchFixup: DeclSyntax = """
+    @_implements(Swift.Equatable, ==(_:_:))
+    public static func _$equals(lhs: Self, rhs: Self) -> Bool {
+      return lhs == rhs
+    }
+    """
+    associatedMembers.append(dynamicDispatchFixup)
   }
   
   private func forwardCodingKeysForDerivedStorageIfNeeded(
@@ -471,9 +447,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
     
     var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
-    applyEquatableWorkaroundIfNeeded(members: &members, protocols: &protocols)
-    
     var associatedMembers = [any DeclSyntaxProtocol]()
+    applyEquatableWorkaroundIfNeeded(members: &members,
+                                     protocols: &protocols,
+                                     associatedMembers: &associatedMembers)
     forwardCodingKeysForDerivedStorageIfNeeded(
         members: &members,
         protocols: &protocols,
