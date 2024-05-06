@@ -304,6 +304,12 @@ struct Foo {
 }
 ```
 
+## Contribution
+
+The project is open for contribution; however, please be mindful of the
+[coding standards](./CODE-STYLE.md). Paired test cases are also required
+for bugfix and feature contributions.
+
 ## License
 
 MIT
