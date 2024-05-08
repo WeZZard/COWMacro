@@ -344,6 +344,39 @@ final class COWTests: XCTestCase {
     XCTAssertEqual(fee, foe)
   }
   
+  // The only difference between this test case and
+  // `ManuallyConformedEquatableStruct` is that `foo` is `@COWExcluded`.
+  // This test fails to compile with previous implementation of `==`
+  // workaround.
+  @COW
+  struct ManuallyConformedEquatableStruct2: Hashable {
+    
+    var value: Int = 0
+    var wrappedValue: Int { value }
+    
+    @COWExcluded
+    let foo = NotConformingToHashable()
+    
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(value)
+    }
+    
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      return lhs.wrappedValue == rhs.wrappedValue
+    }
+    
+  }
+  
+  func testManuallyConformedEquatableStruct2() {
+    var fee = ManuallyConformedEquatableStruct2()
+    let foe = fee
+    XCTAssertEqual(fee, foe)
+    fee.value = 100
+    XCTAssertNotEqual(fee, foe)
+    fee.value = 0
+    XCTAssertEqual(fee, foe)
+  }
+  
   @COW
   struct CodableStruct: Codable {
     
