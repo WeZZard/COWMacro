@@ -121,7 +121,7 @@ extension StructDeclSyntax {
 
 extension FunctionSignatureSyntax {
   
-  var hasThrows: Bool {
+  internal var hasThrows: Bool {
     effectSpecifiers?.throwsSpecifier?.tokenKind == .keyword(.`throws`)
   }
   
@@ -140,11 +140,11 @@ extension FunctionDeclSyntax {
     return false
   }
   
-  var isMutating: Bool {
+  internal var isMutating: Bool {
     modifiers.contains(where: { $0.name.tokenKind == .keyword(.`mutating`) })
   }
   
-  func returnTypeEquals(to type: String) -> Bool {
+  internal func returnTypeEquals(to type: String) -> Bool {
     guard let returnClause = signature.returnClause,
           let returnType = returnClause.type.as(IdentifierTypeSyntax.self) else {
       return type == "Void"
@@ -154,7 +154,7 @@ extension FunctionDeclSyntax {
   
   // Equatable:
   // static func == (lhs: Self, rhs: Self) -> Bool
-  func likelyToConformToEquatable(for structDecl: StructDeclSyntax) -> Bool {
+  internal func likelyToConformToEquatable(for structDecl: StructDeclSyntax) -> Bool {
     guard isStatic else {
       return false
     }
@@ -186,7 +186,7 @@ extension FunctionDeclSyntax {
   
   // Hashable:
   // func hash(into hasher: inout Hasher)
-  var likelyToConformToHashable: Bool {
+  internal var likelyToConformToHashable: Bool {
     guard !isStatic,
           name.trimmed.text == "hash",
           returnTypeEquals(to: "Void") else {
@@ -209,7 +209,7 @@ extension FunctionDeclSyntax {
   
   // Encodable:
   // func encode(to encoder: any Encoder) throws
-  var likelyToConformToEncodable: Bool {
+  internal var likelyToConformToEncodable: Bool {
     guard !isStatic,
           name.trimmed.text == "encode",
           returnTypeEquals(to: "Void"),
@@ -497,7 +497,7 @@ extension InitializerDeclSyntax {
   
   // Decodable:
   // init(from decoder: any Decoder) throws
-  var likelyToConformToDecodable: Bool {
+  internal var likelyToConformToDecodable: Bool {
     guard signature.hasThrows else {
       return false
     }
@@ -765,27 +765,27 @@ extension SwitchCaseSyntax {
   
 }
 
-let equatableProtocolNames: Set<String> = [
+internal let equatableProtocolNames: Set<String> = [
   "Equatable",
   "Swift.Equatable"
 ]
 
-let hashableProtocolNames: Set<String> = [
+internal let hashableProtocolNames: Set<String> = [
   "Hashable",
   "Swift.Hashable"
 ]
 
-let codableProtocolNames: Set<String> = [
+internal let codableProtocolNames: Set<String> = [
   "Codable",
   "Swift.Codable"
 ]
 
-let encodableProtocolNames: Set<String> = [
+internal let encodableProtocolNames: Set<String> = [
   "Encodable",
   "Swift.Encodable"
 ]
 
-let decodableProtocolNames: Set<String> = [
+internal let decodableProtocolNames: Set<String> = [
   "Decodable",
   "Swift.Decodable"
 ]
@@ -798,7 +798,7 @@ private let autoSynthesizingProtocolTypes: Set<String> =
     .union(decodableProtocolNames)
 
 extension InheritedTypeListSyntax {
-  func containsType(named typeName: String) -> Bool {
+  internal func containsType(named typeName: String) -> Bool {
     contains(where: {
       guard let identifier = $0.type.identifier else {
         return false

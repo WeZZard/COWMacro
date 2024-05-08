@@ -5,8 +5,8 @@ import SwiftSyntaxMacros
 @_implementationOnly import SwiftSyntaxBuilder
 @_implementationOnly import SwiftDiagnostics
 
-let defaultStorageTypeName: TokenSyntax = "_$COWStorage"
-let defaultStorageName: TokenSyntax = "_$storage"
+internal let defaultStorageTypeName: TokenSyntax = "_$COWStorage"
+internal let defaultStorageName: TokenSyntax = "_$storage"
 
 // MARK: - NameLookupable
 
