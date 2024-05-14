@@ -245,11 +245,9 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
     
     // Bail out if `appliedStructDecl` does not manually implement `==`.
-    guard appliedStructDecl.memberBlock.members
-      .lazy
-      .map(\.decl)
-      .compactMap({$0.as(FunctionDeclSyntax.self)})
-      .contains(where: {$0.likelyToConformToEquatable(for: appliedStructDecl)}) else {
+    guard appliedStructDecl.memberBlock.members.contains(where: {
+     $0.decl.as(FunctionDeclSyntax.self)?.likelyToConformToEquatable(for: appliedStructDecl) ?? false
+    }) else {
       return
     }
     
