@@ -11,6 +11,8 @@ import SwiftSyntaxMacros
 @_implementationOnly import SwiftSyntaxBuilder
 @_implementationOnly import SwiftDiagnostics
 
+private let defaultStorageTypeName: TokenSyntax = "_$COWStorage"
+
 internal class COWExpansionFactory<Context: MacroExpansionContext> {
   
   internal let node: AttributeSyntax
@@ -107,12 +109,12 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     additionalMembers: [any DeclSyntaxProtocol]?
   )
   
-  internal func getStorageTypeDecl() -> StorageTypeAndAssociatedMembers {
+  internal func getStorageTypeDecl(storageName: TokenSyntax) -> StorageTypeAndAssociatedMembers {
     if let userStorageTypeDecl {
       return (userStorageTypeDecl, nil)
     }
     
-    return createDerivedStorageTypeDecl()
+    return createDerivedStorageTypeDecl(storageName: storageName)
   }
   
   internal var hasDefaultInitializerInStorage: Bool {
@@ -289,6 +291,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
   }
   
   private func forwardCodingKeysForDerivedStorageIfNeeded(
+    storageName: TokenSyntax,
     members: inout [MemberBlockItemSyntax],
     protocols: inout [InheritedTypeSyntax],
     associatedMembers: inout [any DeclSyntaxProtocol]
@@ -357,8 +360,6 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     
     // Expand coding functions in `appliedStructDecl`, forwarding the
     // invocation to the derived storage.
-    let storageName = appliedStructDecl.copyOnWriteStorageName
-        ?? defaultStorageName
     let throwsEffect = FunctionEffectSpecifiersSyntax.init(
       throwsSpecifier: "throws"
     )
@@ -439,7 +440,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
   }
   
-  private func createDerivedStorageTypeDecl() -> StorageTypeAndAssociatedMembers {
+  private func createDerivedStorageTypeDecl(storageName: TokenSyntax) -> StorageTypeAndAssociatedMembers {
     var members = appliedStructValidVarDecls.map {
       return MemberBlockItemSyntax(decl: $0)
     }
@@ -450,6 +451,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
                                      protocols: &protocols,
                                      associatedMembers: &associatedMembers)
     forwardCodingKeysForDerivedStorageIfNeeded(
+        storageName: storageName,
         members: &members,
         protocols: &protocols,
         associatedMembers: &associatedMembers
