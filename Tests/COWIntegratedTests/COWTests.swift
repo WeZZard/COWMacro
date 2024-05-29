@@ -461,6 +461,32 @@ final class COWTests: XCTestCase {
   }
   
   @COW
+  struct CodableStructWithCustomStorageType: Codable {
+    
+    @COWStorage
+    struct CustomStorage: Codable {
+      
+    }
+    
+    var value: Int = 0
+    
+  }
+  
+  func testCodableStructWithCustomStorageType() {
+    var fee = CodableStructWithCustomStorageType()
+    primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
+    do {
+      let encoder = JSONEncoder()
+      let data = try encoder.encode(fee)
+      let decoder = JSONDecoder()
+      let codededFee = try decoder.decode(CodableStruct.self, from: data)
+      XCTAssertEqual(fee.value, codededFee.value)
+    } catch _ {
+      XCTFail()
+    }
+  }
+  
+  @COW
   struct HashableStruct: Hashable {
     
     var value: Int = 0
