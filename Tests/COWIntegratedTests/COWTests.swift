@@ -376,6 +376,37 @@ final class COWTests: XCTestCase {
     fee.value = 0
     XCTAssertEqual(fee, foe)
   }
+
+  @COW
+  struct ManuallyConformedEquatableStructWithCustomStorage: Hashable {
+    
+    @COWStorage
+    struct CustomStorage {
+      
+    }
+    
+    var value: Int = 0
+    var wrappedValue: Int { value }
+    
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(value)
+    }
+    
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      return lhs.wrappedValue == rhs.wrappedValue
+    }
+    
+  }
+  
+  func testManuallyConformedEquatableStructWithCustomStorage() {
+    var fee = ManuallyConformedEquatableStructWithCustomStorage()
+    let foe = fee
+    XCTAssertEqual(fee, foe)
+    fee.value = 100
+    XCTAssertNotEqual(fee, foe)
+    fee.value = 0
+    XCTAssertEqual(fee, foe)
+  }
   
   @COW
   struct CodableStruct: Codable {

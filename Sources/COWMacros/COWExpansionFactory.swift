@@ -109,12 +109,36 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     additionalMembers: [any DeclSyntaxProtocol]?
   )
   
-  internal func getStorageTypeDecl(storageName: TokenSyntax) -> StorageTypeAndAssociatedMembers {
+  internal func getStorageTypeDecl(
+    storageName: TokenSyntax
+  ) -> StorageTypeAndAssociatedMembers {
+    var members = appliedStructValidVarDecls.map {
+      return MemberBlockItemSyntax(decl: $0)
+    }
+    var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
+    var associatedMembers = [any DeclSyntaxProtocol]()
+    applyEquatableWorkaroundIfNeeded(members: &members,
+                                     protocols: &protocols,
+                                     associatedMembers: &associatedMembers)
+    forwardCodingKeysForStorageIfNeeded(
+      storageName: userStorageTypeDecl?.name ?? storageName,
+      members: &members,
+      protocols: &protocols,
+      associatedMembers: &associatedMembers
+    )
+    
     if let userStorageTypeDecl {
-      return (userStorageTypeDecl, nil)
+      return (userStorageTypeDecl, associatedMembers)
     }
     
-    return createDerivedStorageTypeDecl(storageName: storageName)
+    return (
+      createDerivedStorageTypeDecl(
+        protocols: protocols,
+        members: members,
+        storageName: storageName
+      ),
+      associatedMembers
+    )
   }
   
   internal var hasDefaultInitializerInStorage: Bool {
@@ -290,7 +314,7 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     associatedMembers.append(dynamicDispatchFixup)
   }
   
-  private func forwardCodingKeysForDerivedStorageIfNeeded(
+  private func forwardCodingKeysForStorageIfNeeded(
     storageName: TokenSyntax,
     members: inout [MemberBlockItemSyntax],
     protocols: inout [InheritedTypeSyntax],
@@ -440,22 +464,11 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     }
   }
   
-  private func createDerivedStorageTypeDecl(storageName: TokenSyntax) -> StorageTypeAndAssociatedMembers {
-    var members = appliedStructValidVarDecls.map {
-      return MemberBlockItemSyntax(decl: $0)
-    }
-    
-    var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
-    var associatedMembers = [any DeclSyntaxProtocol]()
-    applyEquatableWorkaroundIfNeeded(members: &members,
-                                     protocols: &protocols,
-                                     associatedMembers: &associatedMembers)
-    forwardCodingKeysForDerivedStorageIfNeeded(
-        storageName: storageName,
-        members: &members,
-        protocols: &protocols,
-        associatedMembers: &associatedMembers
-    )
+  private func createDerivedStorageTypeDecl(
+    protocols: [InheritedTypeSyntax],
+    members: [MemberBlockItemSyntax],
+    storageName: TokenSyntax
+  ) -> StructDeclSyntax {
     
     let inheritance = InheritanceClauseSyntax {
       InheritedTypeListSyntax {
@@ -467,15 +480,12 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       )
     }
     
-    return (
-      StructDeclSyntax(
-        name: defaultStorageTypeName,
-        inheritanceClause: inheritance
-      ) {
-        MemberBlockItemListSyntax(members)
-      },
-      associatedMembers
-    )
+    return StructDeclSyntax(
+      name: defaultStorageTypeName,
+      inheritanceClause: inheritance
+    ) {
+      MemberBlockItemListSyntax(members)
+    }
   }
   
   private func collectExplicitInitParameters(
