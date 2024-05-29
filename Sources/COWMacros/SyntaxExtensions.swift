@@ -119,6 +119,14 @@ extension StructDeclSyntax {
   
 }
 
+extension FunctionSignatureSyntax {
+  
+  internal var hasThrows: Bool {
+    effectSpecifiers?.throwsSpecifier?.tokenKind == .keyword(.`throws`)
+  }
+  
+}
+
 extension FunctionDeclSyntax {
   
   internal var isStatic: Bool {
@@ -128,6 +136,107 @@ extension FunctionDeclSyntax {
           return true
         }
       }
+    }
+    return false
+  }
+  
+  internal var isMutating: Bool {
+    modifiers.contains(where: { $0.name.tokenKind == .keyword(.`mutating`) })
+  }
+  
+  internal func returnTypeEquals(to type: String) -> Bool {
+    guard let returnClause = signature.returnClause,
+          let returnType = returnClause.type.as(IdentifierTypeSyntax.self) else {
+      return type == "Void"
+    }
+    return returnType.name.trimmed.text == type
+  }
+  
+  // Equatable:
+  // static func == (lhs: Self, rhs: Self) -> Bool
+  internal func likelyToConformToEquatable(for structDecl: StructDeclSyntax) -> Bool {
+    guard isStatic else {
+      return false
+    }
+    guard name.tokenKind == .binaryOperator("=="),
+          returnTypeEquals(to: "Bool") else {
+      return false
+    }
+    let params = signature.parameterClause.parameters
+    guard params.count == 2 else {
+      return false
+    }
+    guard let lhs = params.first, let rhs = params.last else {
+      return false
+    }
+    guard lhs.firstName.trimmed.text == "lhs",
+          rhs.firstName.trimmed.text == "rhs",
+          let lhsType = lhs.type.as(IdentifierTypeSyntax.self),
+          let rhsType = rhs.type.as(IdentifierTypeSyntax.self),
+          lhsType.name.tokenKind == rhsType.name.tokenKind else {
+      return false
+    }
+    // Accept either `Self` or the name of the struct.
+    guard lhsType.name.tokenKind == .keyword(.`Self`) ||
+            lhsType.name.tokenKind == structDecl.name.tokenKind else {
+      return false
+    }
+    return true
+  }
+  
+  // Hashable:
+  // func hash(into hasher: inout Hasher)
+  internal var likelyToConformToHashable: Bool {
+    guard !isStatic,
+          name.trimmed.text == "hash",
+          returnTypeEquals(to: "Void") else {
+      return false
+    }
+    let params = signature.parameterClause.parameters
+    guard params.count == 1 else {
+      return false
+    }
+    let singleParam = params.first!
+    guard singleParam.firstName.trimmed.text == "into",
+          let paramType = singleParam.type.as(AttributedTypeSyntax.self),
+          paramType.specifier?.tokenKind == .keyword(.`inout`),
+          let baseParamType = paramType.baseType.as(IdentifierTypeSyntax.self),
+          baseParamType.name.trimmed.text == "Hasher" else {
+      return false
+    }
+    return true
+  }
+  
+  // Encodable:
+  // func encode(to encoder: any Encoder) throws
+  internal var likelyToConformToEncodable: Bool {
+    guard !isStatic,
+          name.trimmed.text == "encode",
+          returnTypeEquals(to: "Void"),
+          signature.hasThrows else {
+      return false
+    }
+    let params = signature.parameterClause.parameters
+    guard params.count == 1 else {
+      return false
+    }
+    let singleParam = params.first!
+    guard singleParam.firstName.trimmed.text == "to" else {
+      return false
+    }
+    // Existential any will be a requirement in the future release of Swift.
+    // For now, accept both `any Encoder` and `Encoder`.
+    if let paramType = singleParam.type.as(SomeOrAnyTypeSyntax.self) {
+      guard paramType.someOrAnySpecifier.tokenKind == .keyword(.`any`),
+            let type = paramType.constraint.as(IdentifierTypeSyntax.self),
+            type.name.trimmed.text == "Encoder" else {
+        return false
+      }
+      return true
+    }
+    guard let paramType = singleParam.type.as(IdentifierTypeSyntax.self),
+          paramType.name.trimmed.text == "Encoder" else {
+      return false
     }
     return true
   }
@@ -152,8 +261,12 @@ extension VariableDeclSyntax {
     return hasMacroApplication(COWExcludedMacro.name)
   }
   
+  internal var isStored: Bool {
+    return bindings.allSatisfy(\.isStored)
+  }
+  
   internal var isNotExcludedAndStored: Bool {
-    return !isExcluded && bindings.allSatisfy(\.isStored) && !isStatic
+    return !isExcluded && isStored && !isStatic
   }
   
   internal var isStatic: Bool {
@@ -380,6 +493,37 @@ extension InitializerDeclSyntax {
   
   internal func isEquivalent(to other: InitializerDeclSyntax) -> Bool {
     return signatureStandin == other.signatureStandin
+  }
+  
+  // Decodable:
+  // init(from decoder: any Decoder) throws
+  internal var likelyToConformToDecodable: Bool {
+    guard signature.hasThrows else {
+      return false
+    }
+    let params = signature.parameterClause.parameters
+    guard params.count == 1 else {
+      return false
+    }
+    let singleParam = params.first!
+    guard singleParam.firstName.trimmed.text == "from" else {
+      return false
+    }
+    // Existential any will be a requirement in the future release of Swift.
+    // For now, accept both `any Decoder` and `Decoder`.
+    if let paramType = singleParam.type.as(SomeOrAnyTypeSyntax.self) {
+      guard paramType.someOrAnySpecifier.tokenKind == .keyword(.`any`),
+            let type = paramType.constraint.as(IdentifierTypeSyntax.self),
+            type.name.trimmed.text == "Decoder" else {
+        return false
+      }
+      return true
+    }
+    guard let paramType = singleParam.type.as(IdentifierTypeSyntax.self),
+          paramType.name.trimmed.text == "Decoder" else {
+      return false
+    }
+    return true
   }
   
 }
@@ -621,18 +765,48 @@ extension SwitchCaseSyntax {
   
 }
 
-private let autoSynthesizingProtocolTypes: Set<String> = [
+internal let equatableProtocolNames: Set<String> = [
   "Equatable",
-  "Swift.Equatable",
-  "Hashable",
-  "Swift.Hashable",
-  "Codable",
-  "Swift.Codable",
-  "Encodable",
-  "Swift.Encodable",
-  "Decodable",
-  "Swift.Decodable",
+  "Swift.Equatable"
 ]
+
+internal let hashableProtocolNames: Set<String> = [
+  "Hashable",
+  "Swift.Hashable"
+]
+
+internal let codableProtocolNames: Set<String> = [
+  "Codable",
+  "Swift.Codable"
+]
+
+internal let encodableProtocolNames: Set<String> = [
+  "Encodable",
+  "Swift.Encodable"
+]
+
+internal let decodableProtocolNames: Set<String> = [
+  "Decodable",
+  "Swift.Decodable"
+]
+
+private let autoSynthesizingProtocolTypes: Set<String> =
+  equatableProtocolNames
+    .union(hashableProtocolNames)
+    .union(codableProtocolNames)
+    .union(encodableProtocolNames)
+    .union(decodableProtocolNames)
+
+extension InheritedTypeListSyntax {
+  internal func containsType(named typeName: String) -> Bool {
+    contains(where: {
+      guard let identifier = $0.type.identifier else {
+        return false
+      }
+      return identifier == typeName
+    })
+  }
+}
 
 extension DeclGroupSyntax {
   
@@ -643,14 +817,124 @@ extension DeclGroupSyntax {
       return []
     }
     
-    guard let inheritedTypes
+    guard var inheritedTypes
             = structDecl.inheritanceClause?.inheritedTypes else {
       return []
     }
     
+    var hasHashableImpl = false
+    var hasEquatableImpl = false
+    var hasEncodableImpl = false
+    var hasDecodableImpl = false
+    
+    for member in structDecl.memberBlock.members {
+      if hasHashableImpl,
+         hasEquatableImpl,
+         hasEncodableImpl,
+         hasDecodableImpl {
+        break
+      }
+      
+      if !hasEquatableImpl || !hasHashableImpl || !hasEncodableImpl,
+         let functionDecl = member.decl.as(FunctionDeclSyntax.self) {
+        if !hasEquatableImpl {
+          hasEquatableImpl = functionDecl.likelyToConformToEquatable(for: structDecl)
+          if hasEquatableImpl {
+            continue
+          }
+        }
+        if !hasHashableImpl {
+          hasHashableImpl = functionDecl.likelyToConformToHashable
+          if hasHashableImpl {
+            continue
+          }
+        }
+        if !hasEncodableImpl {
+          hasEncodableImpl = functionDecl.likelyToConformToEncodable
+          if hasEncodableImpl {
+            continue
+          }
+        }
+      } else if !hasDecodableImpl,
+                let initializerDecl = member.decl.as(InitializerDeclSyntax.self) {
+        hasDecodableImpl = initializerDecl.likelyToConformToDecodable
+      }
+    }
+    
+    // Only conform to the protocols if custom implementation is absent.
+    var protocolsToConform = autoSynthesizingProtocolTypes
+    
+    if hashableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
+      if hasHashableImpl {
+        protocolsToConform.subtract(hashableProtocolNames)
+      }
+      // Hashable implies Equatable.
+      // FIXME: compiler bug, must unconditionally conform to Equatable
+      #if true
+      inheritedTypes.append(
+        InheritedTypeSyntax(
+          type: IdentifierTypeSyntax(
+            name: "Swift.Equatable"
+          )
+        )
+      )
+      #else
+      if !hasEquatableImpl {
+        inheritedTypes.append(
+          InheritedTypeSyntax(
+            type: IdentifierTypeSyntax(
+              name: "Swift.Equatable"
+            )
+          )
+        )
+      }
+      #endif
+    }
+    
+    // FIXME: compiler bug
+    #if false
+    if equatableProtocolNames.contains(where: inheritedTypes.containsType(named:)),
+       hasEquatableImpl {
+      protocolsToConform.subtract(equatableProtocolNames)
+    }
+    #endif
+    
+    if hasEncodableImpl || hasDecodableImpl {
+      protocolsToConform.subtract(codableProtocolNames)
+    }
+    if codableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
+      // Codable implies Encodable & Decodable.
+      if hasDecodableImpl, !hasEncodableImpl {
+        inheritedTypes.append(
+          InheritedTypeSyntax(
+            type: IdentifierTypeSyntax(
+              name: "Swift.Encodable"
+            )
+          )
+        )
+      } else if hasEncodableImpl, !hasDecodableImpl {
+        inheritedTypes.append(
+          InheritedTypeSyntax(
+            type: IdentifierTypeSyntax(
+              name: "Swift.Decodable"
+            )
+          )
+        )
+      }
+    } else {
+      if hasEncodableImpl,
+         encodableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
+        protocolsToConform.subtract(encodableProtocolNames)
+      }
+      if hasDecodableImpl,
+         decodableProtocolNames.contains(where: inheritedTypes.containsType(named:)) {
+        protocolsToConform.subtract(decodableProtocolNames)
+      }
+    }
+    
     return inheritedTypes.filter { each in
       if let ident = each.type.identifier {
-        if autoSynthesizingProtocolTypes.contains(ident) {
+        if protocolsToConform.contains(ident) {
           return true
         }
       }
