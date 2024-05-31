@@ -459,7 +459,7 @@ final class COWTests: XCTestCase {
       XCTFail()
     }
   }
-  
+
   @COW
   struct CodableStructWithCustomStorageType: Codable {
     
@@ -497,6 +497,40 @@ final class COWTests: XCTestCase {
     var fee = HashableStruct()
     primitiveTestCRUD(&fee, properties: (\.value, 0, 100))
     XCTAssertEqual(fee.hashValue, fee.hashValue)
+  }
+
+  @COW
+  struct StructWithPrivateProperties {
+  
+    private var bar: Int
+    var getBar: Int { bar }
+  
+  }
+  
+  func testStructWithPrivateProperties() {
+    let foo = StructWithPrivateProperties(bar: 100)
+    // Macro expansions that does not drop the access control modifier will
+    // fail to compile - we must explicitly use the affected properties to
+    // trigger it.
+    XCTAssertEqual(foo.getBar, 100)
+  }
+
+  @COW
+  struct StructWithPrivatePropertiesAndCustomStorage {
+  
+    private var bar: Int
+    var getBar: Int { bar }
+
+    @COWStorage
+    struct CustomStorage {
+      
+    }
+  
+  }
+  
+  func testStructWithPrivatePropertiessAndCustomStorage() {
+    let foo = StructWithPrivatePropertiesAndCustomStorage(bar: 100)
+    XCTAssertEqual(foo.getBar, 100)
   }
   
   // MARK: Utilities
