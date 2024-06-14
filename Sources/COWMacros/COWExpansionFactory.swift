@@ -113,7 +113,15 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     storageName: TokenSyntax
   ) -> StorageTypeAndAssociatedMembers {
     var members = appliedStructValidVarDecls.map {
-      return MemberBlockItemSyntax(decl: $0)
+      // If a given member is modified with `private`, then we must drop it in
+      // the storage to allow outer synthesized accessors to visit it. For
+      // simplicity, all kinds of access control modifiers are unconditionally
+      // dropped.
+      var varDecl = $0
+      varDecl.modifiers = varDecl.modifiers.filter {
+        $0.accessControlModifier == nil
+      }
+      return MemberBlockItemSyntax(decl: varDecl)
     }
     var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
     var associatedMembers = [any DeclSyntaxProtocol]()

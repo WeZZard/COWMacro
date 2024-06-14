@@ -305,5 +305,57 @@ final class COWMacroOLoCTests: XCTestCase {
     )
   }
 
+  /// Drop the access control modifiers for properties in the storage.
+  ///
+  /// The original struct:
+  ///
+  /// ```
+  /// struct Foo {
+  ///
+  ///   private var bar: Int
+  ///
+  /// }
+  /// ```
+  ///
+  func testStructWithPrivateProperties() {
+    assertMacroExpansion(
+      """
+      @COW
+      struct Foo {
+      
+        private var bar: Int
+      
+      }
+      """,
+      expandedSource:
+      """
+      
+      struct Foo {
+
+        private var bar: Int {
+          _read {
+            yield _$storage.bar
+          }
+          _modify {
+            yield &_$storage.bar
+          }
+        }
+
+        struct _$COWStorage: COW.CopyOnWriteStorage {
+          var bar: Int
+        }
+        @COW._Box
+        var _$storage: _$COWStorage
+
+        init(bar: Int) {
+          self._$storage = _$COWStorage(bar: bar)
+        }
+
+      }
+      """,
+      macros: testedMacros,
+      indentationWidth: .spaces(2)
+    )
+  }
 }
 

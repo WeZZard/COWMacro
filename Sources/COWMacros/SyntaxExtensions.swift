@@ -243,6 +243,20 @@ extension FunctionDeclSyntax {
   
 }
 
+extension DeclModifierSyntax {
+  internal var accessControlModifier: Keyword? {
+    guard case let .keyword(keyword) = name.tokenKind else {
+      return nil
+    }
+    switch keyword {
+    case .`fileprivate`, .`internal`, .`open`, .`private`, .`public`:
+      return keyword
+    default:
+      return nil
+    }
+  }
+}
+
 extension VariableDeclSyntax {
   
   internal var isVarBinding: Bool {
