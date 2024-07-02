@@ -121,6 +121,10 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       varDecl.modifiers = varDecl.modifiers.filter {
         $0.accessControlModifier == nil
       }
+      let usableFromInline: AttributeSyntax = "@usableFromInline"
+      varDecl.attributes.append(.`attribute`(usableFromInline))
+      let alwaysInline: AttributeSyntax = "@inline(__always)"
+      varDecl.attributes.append(.`attribute`(alwaysInline))
       return MemberBlockItemSyntax(decl: varDecl)
     }
     var protocols = appliedStructDecl.collectAutoSynthesizingProtocolConformance()
@@ -168,15 +172,15 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       return
         """
         @\(raw: COWExcludedMacro.name)
-        @\(_Box.type)
-        var \(memberName): \(typeName) = \(typeName)()
+        @usableFromInline
+        var \(memberName): \(_Box.type)<\(typeName)> = .init(wrappedValue: \(typeName)())
         """
     } else {
       return
         """
         @\(raw: COWExcludedMacro.name)
-        @\(_Box.type)
-        var \(memberName): \(typeName)
+        @usableFromInline
+        var \(memberName): \(_Box.type)<\(typeName)>
         """
     }
   }
@@ -298,11 +302,11 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
     #endif
     #if swift(<5.9.2)
     let nestedEqualFunc: DeclSyntax = """
-    static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool { fatalError() }
+    @usableFromInline static func equalsWorkaround(lhs: Self, rhs: Self) -> Bool { fatalError() }
     """
     #else
     let nestedEqualFunc: DeclSyntax = """
-    static func == (lhs: Self, rhs: Self) -> Bool { fatalError() }
+    @usableFromInline static func == (lhs: Self, rhs: Self) -> Bool { fatalError() }
     """
     #endif
     members.append(MemberBlockItemSyntax(decl: nestedEqualFunc))
@@ -396,78 +400,20 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
       throwsSpecifier: "throws"
     )
     if conformingToEncodable {
-      let encodeForwarder = FunctionDeclSyntax(
-        name: "encode",
-        signature: .init(
-          parameterClause: .init(parametersBuilder: {
-            .init(
-              firstName: "to",
-              secondName: "encoder",
-              type: SomeOrAnyTypeSyntax(
-                someOrAnySpecifier: .keyword(.`any`),
-                constraint: IdentifierTypeSyntax(name: "Encoder")
-              )
-            )
-          }),
-          effectSpecifiers: throwsEffect
-        ),
-        body: .init(statementsBuilder: {
-          TryExprSyntax(expression: FunctionCallExprSyntax(
-            calledExpression: MemberAccessExprSyntax(
-              base: DeclReferenceExprSyntax(baseName: storageName),
-              declName: DeclReferenceExprSyntax(baseName: "encode")
-            ),
-            leftParen: "(",
-            arguments: .init(itemsBuilder: {
-              .init(
-                label: "to",
-                expression: DeclReferenceExprSyntax(baseName: "encoder")
-              )
-            }),
-            rightParen: ")"
-          ))
-        })
-      )
+
+      let encodeForwarder: DeclSyntax = """
+      func encode(to encoder: any Encoder) throws {
+        try \(defaultStorageName).wrappedValue.encode(to: encoder)
+      }
+      """
       associatedMembers.append(encodeForwarder)
     }
     if conformingToDecodable {
-      let decodeForwarder = InitializerDeclSyntax(
-        signature: .init(
-          parameterClause: .init(parametersBuilder: {
-            .init(
-              firstName: "from",
-              secondName: "decoder",
-              type: SomeOrAnyTypeSyntax(
-                someOrAnySpecifier: .keyword(.`any`),
-                constraint: IdentifierTypeSyntax(name: "Decoder")
-              )
-            )
-          }),
-          effectSpecifiers: throwsEffect
-        ),
-        body: .init(statementsBuilder: {
-          InfixOperatorExprSyntax(
-            leftOperand: MemberAccessExprSyntax(
-              base: DeclReferenceExprSyntax(baseName: .keyword(.`self`)),
-              declName: DeclReferenceExprSyntax(baseName: storageName)
-            ),
-            operator: AssignmentExprSyntax(),
-            rightOperand: TryExprSyntax(expression: FunctionCallExprSyntax(
-              calledExpression: MemberAccessExprSyntax(
-                declName: .init(baseName: .keyword(.`init`))
-              ),
-              leftParen: "(",
-              arguments: .init(itemsBuilder: {
-                .init(
-                  label: "from",
-                  expression: DeclReferenceExprSyntax(baseName: "decoder")
-                )
-              }),
-              rightParen: ")"
-            ))
-          )
-        })
-      )
+      let decodeForwarder: DeclSyntax = """
+      init(from decoder: any Decoder) throws {
+        self.\(defaultStorageName) = .init(wrappedValue: try \(defaultStorageTypeName)(from: decoder))
+      }
+      """
       associatedMembers.append(decodeForwarder)
     }
   }
@@ -487,10 +433,13 @@ internal class COWExpansionFactory<Context: MacroExpansionContext> {
         protocols
       )
     }
+
+    let attributes: AttributeListSyntax = "@usableFromInline"
     
     return StructDeclSyntax(
       name: defaultStorageTypeName,
-      inheritanceClause: inheritance
+      inheritanceClause: inheritance,
+      attributes: attributes
     ) {
       MemberBlockItemListSyntax(members)
     }

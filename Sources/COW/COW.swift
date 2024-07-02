@@ -164,42 +164,51 @@ public macro COWStorageAddProperty(
 public macro COWMakeStorage()
   = #externalMacro(module: "COWMacros", type: "COWMakeStorageMacro")
 
-@propertyWrapper
 @frozen
 public struct _Box<Contents: CopyOnWriteStorage> {
   
-  public var _buffer: ManagedBuffer<Contents, Void>
+  @usableFromInline
+  final class Container {
+    @usableFromInline
+      @exclusivity(unchecked)
+    var _value: Contents
+    
+    @usableFromInline
+      @inline(__always)
+    var value: Contents {
+      _read {
+        yield _value
+      }
+      _modify {
+        yield &_value
+      }
+    }
+    
+    @usableFromInline
+    init(_ value: Contents) {
+      self._value = value
+    }
+  }
+  
+  @usableFromInline
+  var _buffer: Container
   
   @inlinable
   public init(wrappedValue: Contents) {
-    _buffer = .create(minimumCapacity: 0) { _ in
-      return wrappedValue
-    }
+    _buffer = .init(wrappedValue)
   }
   
   @inlinable
+    @inline(__always)
   public var wrappedValue: Contents {
     @_effects(readonly)
     _read {
-      yield _buffer.header
+      yield _buffer.value
     }
     @_effects(readwrite)
     _modify {
       _makeUniqueBufferIfNeeded()
-      yield &_buffer.header
-    }
-  }
-  
-  @inlinable
-  public var projectedValue: _Box {
-    @_effects(readonly)
-    _read {
-      yield self
-    }
-    @_effects(readwrite)
-    _modify {
-      _makeUniqueBufferIfNeeded()
-      yield &self
+      yield &_buffer.value
     }
   }
   
@@ -210,9 +219,7 @@ public struct _Box<Contents: CopyOnWriteStorage> {
     guard _slowPath(!_isUnique_native(&_buffer)) else {
       return
     }
-    _buffer = .create(minimumCapacity: 1) { [_buffer] _ in
-      return _buffer.header
-    }
+    _buffer = .init(_buffer._value)
   }
   
 }
