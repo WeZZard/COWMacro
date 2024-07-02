@@ -162,10 +162,22 @@ public struct COWMacro:
         return []
       }
       
-      return [
+      var attributes: [AttributeSyntax] = [
         "@\(raw: COWIncludedMacro.name)(storageName: \"\(storageName)\")",
       ]
       
+      // Mark included public/internal properties @inlinable to allow cross
+      // module inlining of accessors.
+      let accessControl = varDecl.modifiers.compactMap(\.accessControlModifier)
+      // The default access control level is internal.
+      let markInlinable = accessControl.isEmpty || 
+        !accessControl.filter({ $0 == .`public` || $0 == .`internal`}).isEmpty
+      if markInlinable,
+         !varDecl.attributes.contains(where: {$0.hasName("inlinable")}) {
+        attributes.append("@inlinable")
+      }
+      
+      return attributes
     } else if let memberStructDecl = member.as(StructDeclSyntax.self) {
       // Marks `@COWStorage` sub struct with `@COWStorageAddProperty`
       
@@ -340,14 +352,14 @@ public struct COWIncludedMacro: AccessorMacro, NameLookupable {
     let readAccessor: AccessorDeclSyntax =
       """
       _read {
-        yield \(storageName).\(identifier)
+        yield \(storageName).wrappedValue.\(identifier)
       }
       """
     
     let modifyAccessor: AccessorDeclSyntax =
       """
       _modify {
-        yield &\(storageName).\(identifier)
+        yield &\(storageName).wrappedValue.\(identifier)
       }
       """
     
